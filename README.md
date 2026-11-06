@@ -19,7 +19,7 @@ Stop it with `pkill ClawdWallpaper`. Only one copy runs at a time.
 
 ## His looks
 
-He normally wears the Santa hat. After 3 minutes on the desktop he changes into the next look, keeps it for about 2 minutes, then goes back to Santa until the next change. Only a long visit counts: if your windows cover him for more than 20 seconds, he's back in the Santa hat and the 3 minutes start again.
+He normally wears the Santa hat. After 3 minutes on the desktop he changes into the next look, keeps it for about 2 minutes, then goes back to Santa by himself until the next change. Only a long visit counts: if your windows cover him for more than 20 seconds, he's back in the Santa hat and the 3 minutes start again.
 
 | Look | What he wears |
 | --- | --- |
@@ -65,7 +65,7 @@ The other looks are quicker: his hat flies off, the new one drops on, and sparks
 **Most of the time**
 - His eyes follow your cursor. Leave it alone for 10 seconds and he looks at the moon or at Guts instead.
 - He blinks, bobs, tippy-taps his feet, and sometimes waves at Guts. Guts never waves back.
-- A Claude Code-style status line sits under him, and each look has its own, such as `✻ Compacting 200 years of trauma… (13s · esc to interrupt)`.
+- A Claude Code-style status line sits under him, and each look has its own, such as `✻ Compacting 200 years of trauma… (esc to interrupt)`.
 
 **When you interact**
 - Hover over him for `> <` eyes and an excited wiggle.
@@ -98,9 +98,9 @@ Measured on an M4 MacBook Air, for the app's own process only, not including the
 
 | State | CPU | Memory |
 | --- | --- | --- |
-| Covered by windows | under 0.1% | 9 MB |
-| Visible, idle | about 0.5% | 9 MB |
-| Sword scene | about 0.9% | 9 MB |
+| Covered by windows | under 0.1% | 10 MB |
+| Visible, idle | about 0.2% | 10 MB |
+| Sword scene | about 0.3% | 10 MB |
 
 Clicks are noticed with a system mouse monitor that only uses the click's position. It doesn't see keystrokes, and nothing is recorded or sent anywhere.
 
