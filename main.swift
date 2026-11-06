@@ -479,10 +479,10 @@ final class Clawd {
 
     var desiredInterval: TimeInterval {
         let t = lastT
-        if sleeping { return 0.5 }
-        if scene != nil || pulling || t < dizzyUntil || t - hopStart < 0.6 || t < waveUntil || t < tapUntil || t - lastMoveT < 1.5 { return 1.0 / 12 }
-        if tired || ProcessInfo.processInfo.isLowPowerModeEnabled { return 1.0 / 3 }
-        return 1.0 / 6
+        if sleeping { return 1 }
+        if scene != nil || pulling || t < dizzyUntil || t - hopStart < 0.6 || t < waveUntil || t < tapUntil || t - lastMoveT < 1.5 { return 1.0 / 10 }
+        if tired || ProcessInfo.processInfo.isLowPowerModeEnabled { return 0.5 }
+        return 1.0 / 3
     }
 
     var tired: Bool { (simBattery ?? battery ?? 100) < 10 }
@@ -536,10 +536,11 @@ final class Clawd {
         if sleeping {
             if moved {
                 sleeping = false; sleepForced = false
+                nextCycle = max(nextCycle, t + every)   // waking up shouldn't set off a change on the spot
                 hopStart = t; hopHeight = 5; wideUntil = t + 0.9
                 verbStart = t
             }
-        } else if scene == nil, idle > (lateNight ? 60 : 300) {
+        } else if scene == nil, wearing == nil, idle > (lateNight ? 60 : 300) {
             sleeping = true
         }
 
@@ -547,13 +548,19 @@ final class Clawd {
         if cycling {
             if gap > coveredReset {
                 nextCycle = t + every
-                if wearing != nil, scene == nil { wearing = nil; currentHat = .santa; currentGear = []; verbStart = t }
-            } else if scene == nil, !sleeping, !tired, !pulling, t > dizzyUntil, t >= nextCycle {
                 if wearing != nil {
-                    wearing = nil; startChange(santaLook, t); nextCycle = t + every
-                } else {
-                    startLook(cycleLooks[lookIndex % cycleLooks.count], t); lookIndex += 1
+                    if scene == nil { wearing = nil; currentHat = .santa; currentGear = []; verbStart = t }
+                    else { nextCycle = t }   // mid-change: let it finish, then straight back to Santa
                 }
+            } else if wearing != nil, t >= nextCycle {
+                // Time's up, and nothing gets to keep him dressed up.
+                if sleeping {
+                    wearing = nil; currentHat = .santa; currentGear = []; nextCycle = t + every   // he wakes up as Santa
+                } else if scene == nil, !pulling, t > dizzyUntil {
+                    wearing = nil; startChange(santaLook, t); nextCycle = t + every
+                }
+            } else if wearing == nil, scene == nil, !sleeping, !tired, !pulling, t > dizzyUntil, t >= nextCycle {
+                startLook(cycleLooks[lookIndex % cycleLooks.count], t); lookIndex += 1
             }
         }
 
@@ -628,8 +635,8 @@ final class Clawd {
             p.lookY = ((-dy / d * mag * 0.5) * 4).rounded() / 4
         }
         if t > nextBlink {
-            blinkUntil = t + 0.2
-            nextBlink = t + (Int.random(in: 0..<5) == 0 ? 0.35 : Double.random(in: 2.5...6.5))
+            blinkUntil = t + 0.34
+            nextBlink = t + (Int.random(in: 0..<5) == 0 ? 0.7 : Double.random(in: 2.5...6.5))
         }
         let onHim = idle < 10 && cd < 9 * u && scene == nil && !sleeping
         if p.eyes == .normal {
@@ -676,13 +683,13 @@ final class Clawd {
         let lineup = (wearing ?? santaLook).verbs
         if t - verbStart > 16 { verbIndex += 1; verbStart = t }
         let line = status ?? lineup[verbIndex % lineup.count]
-        let info = detail ?? (tired ? "" : "(\(Int(t - verbStart))s · esc to interrupt)")
+        let info = detail ?? (tired ? "" : "(esc to interrupt)")
         if tired && status == nil {
             setText("Running on fumes…", "(\(simBattery ?? battery ?? 0)% · esc to interrupt)")
         } else {
             setText(line, info)
         }
-        let spinIndex = sleeping ? 0 : Int(t * 3) % spinner.count
+        let spinIndex = sleeping ? 0 : Int(t * 2) % spinner.count
         if spinIndex != lastSpin { lastSpin = spinIndex; spinLayer.contents = spinImages[spinIndex] }
 
         // Draw only if something changed.
@@ -1049,7 +1056,7 @@ final class Controller: NSObject {
         guard i != interval || timer == nil else { return }
         timer?.invalidate()
         let t = Timer(timeInterval: i, repeats: true) { [weak self] _ in self?.tickAll() }
-        t.tolerance = i * 0.2       // lets macOS group wake-ups together
+        t.tolerance = i >= 0.3 ? i * 0.5 : i * 0.1   // lets macOS group wake-ups together when idle
         RunLoop.main.add(t, forMode: .common)
         timer = t; interval = i
     }
@@ -1060,7 +1067,7 @@ final class Controller: NSObject {
             wasVisible = vis
             FileHandle.standardError.write("\(Date()) desktop \(vis ? "visible" : "covered")\n".data(using: .utf8)!)
         }
-        if !vis { schedule(2); return }   // covered: draw nothing, just check back
+        if !vis { schedule(5); return }   // covered: draw nothing; macOS tells us when that changes, this is a backstop
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         clawds.forEach { $0.tick() }
@@ -1152,6 +1159,7 @@ final class Sim {
     let c: Clawd, step = 1.0 / 12
     var t = 1.0
     var parked: CGPoint { CGPoint(x: c.center.x + 40 * c.u, y: c.center.y - 25 * c.u) }
+    var cursorUntouched = false     // true lets him get sleepy, like a real visit where nobody moves the mouse
     init(hat: Hat?, gear: [Gear]?, screen: NSScreen, every: Double = 3) {
         c = Clawd(screen: screen, hat: hat, gear: gear, show: false, every: every)
         c.randomEvents = false; c.simBattery = 100; c.nextTap = 1e9; c.fakeMouse = parked; c.lastMouse = parked
@@ -1159,7 +1167,7 @@ final class Sim {
     }
     func run(_ seconds: Double, each: (() -> Void)? = nil) {
         let end = t + seconds
-        while t < end { t += step; c.fakeT = t; c.lastMoveT = max(c.lastMoveT, t - 200); c.tick(); each?() }
+        while t < end { t += step; c.fakeT = t; if !cursorUntouched { c.lastMoveT = max(c.lastMoveT, t - 200) }; c.tick(); each?() }
     }
     var swordTotal: Double {
         let T = c.swordTimes
@@ -1203,7 +1211,7 @@ func selftest() -> Bool {
         c.sleeping = true
         sim.run(3)
         check(c.pose.z >= 0 && c.pose.eyes == .blink, "\(name): sleep: not asleep")
-        check(c.desiredInterval == 0.5, "\(name): sleep: not throttled")
+        check(c.desiredInterval == 1, "\(name): sleep: not throttled")
         c.fakeMouse = CGPoint(x: c.center.x + 100, y: c.center.y)
         sim.run(0.2)
         check(!c.sleeping && c.pose.eyes == .wide, "\(name): sleep: did not wake startled")
@@ -1319,6 +1327,31 @@ func selftest() -> Bool {
         check(c.scene == nil && c.wearing == nil, "rotation: changed while asleep")
         c.sleeping = false; sim.run(1)
         check(c.wearing != nil, "rotation: didn't resume after sleep")
+        // Nobody touching the mouse: the armour still has to come off by itself.
+        do {
+            let idle = Sim(hat: nil, gear: nil, screen: screen), i = idle.c
+            idle.cursorUntouched = true
+            idle.run(c.every + idle.swordTotal + holdSeconds + 60)
+            check(i.currentHat == .santa && i.currentGear.isEmpty && i.wearing == nil,
+                  "untouched: still dressed up after the hold: \(i.currentHat) \(i.currentGear), asleep \(i.sleeping)")
+            idle.run(400)
+            check(i.currentHat == .santa && i.sleeping, "untouched: should end up asleep as Santa: \(i.currentHat), asleep \(i.sleeping)")
+            // Waking him shouldn't set off a change on the spot.
+            idle.t += 1; i.fakeMouse = CGPoint(x: i.center.x + 100, y: i.center.y); idle.run(1)
+            check(!i.sleeping && i.scene == nil && i.nextCycle > idle.t + 100, "untouched: waking set off a change: scene \(String(describing: i.scene)), next in \(i.nextCycle - idle.t)")
+            // Put to sleep in a look: wakes up as Santa.
+            let s3 = Sim(hat: nil, gear: nil, screen: screen), j = s3.c
+            j.startLook(looks[1], s3.t); s3.run(6); j.sleeping = true; s3.run(holdSeconds + 5)
+            check(j.currentHat == .santa && j.wearing == nil, "asleep in a look: never went back: \(j.currentHat)")
+            // Low battery shouldn't keep him dressed up either.
+            let s4 = Sim(hat: nil, gear: nil, screen: screen), k = s4.c
+            k.startLook(looks[1], s4.t); s4.run(6); k.simBattery = 5; s4.run(holdSeconds + 8)
+            check(k.currentHat == .santa && k.wearing == nil, "low battery in a look: never went back: \(k.currentHat)")
+            // Covered part way through a change: comes back to Santa soon after.
+            let s5 = Sim(hat: nil, gear: nil, screen: screen), m = s5.c
+            m.startLook(looks[1], s5.t); s5.run(1); s5.t += coveredReset + 5; s5.run(8)
+            check(m.currentHat == .santa && m.wearing == nil, "covered during a change: still \(m.currentHat)")
+        }
         // Fixed outfits stay put.
         let fixed = Sim(hat: .crown, gear: [.cape], screen: screen)
         fixed.run(800)
