@@ -896,6 +896,11 @@ final class Controller: NSObject {
     func rebuild() {
         clawds.forEach { $0.close() }
         clawds = NSScreen.screens.map { Clawd(screen: $0, hat: hat, gear: gear) }
+        // Always draw once, so he's there the moment the desktop is uncovered.
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        clawds.forEach { $0.tick() }
+        CATransaction.commit()
     }
     func schedule(_ i: TimeInterval) {
         guard i != interval || timer == nil else { return }
@@ -1104,6 +1109,13 @@ func selftest() -> Bool {
         check(dizzy, "\(name): chase: never dizzy")
         c.fakeMouse = sim.parked; sim.run(6)
         check(sim.clean() && !c.pulling, "\(name): chase: did not settle")
+        // Covered mid-scene and uncovered much later: each scene should just have finished.
+        c.startSword(sim.t); sim.run(10); sim.t += 3000; sim.run(0.5)
+        check(sim.clean(), "\(name): pause: sword not clean after a long pause")
+        c.sleeping = false; c.lastMoveT = sim.t; c.fakeMouse = sim.parked; sim.run(0.2)
+        c.startEclipse(sim.t); sim.run(10); sim.t += 3000; sim.run(0.5)
+        check(sim.clean(), "\(name): pause: eclipse not clean after a long pause")
+        c.sleeping = false; c.lastMoveT = sim.t; sim.run(0.2)
         // Low battery
         c.fakeMouse = CGPoint(x: c.center.x + 300, y: c.center.y)
         c.simBattery = 7; sim.run(1)
