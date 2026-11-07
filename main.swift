@@ -1332,9 +1332,28 @@ final class Controller: NSObject {
     var hat: Hat?, gear: [Gear]?, suit: Suit?, cycle: [Look] = looks, everyMinutes = defaultEveryMinutes, demoName: String?, awake = true, wasVisible: Bool? = nil
     var clickMonitor: Any?
 
+    // Where the rotation has got to. It outlives any one Clawd, because a rebuild replaces them all
+    // and would otherwise send him back to the first look. Starts past the Berserker, so opening
+    // the app isn't always the sword; the moon is the way to ask for that.
+    lazy var rotation = cycle.count > 1 ? Int.random(in: 1..<cycle.count) : 0
+    var showWindows = true, screenKey = ""
+
+    func currentScreenKey() -> String {
+        NSScreen.screens.map { "\($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] ?? 0) \($0.frame) \($0.backingScaleFactor)" }.joined(separator: "|")
+    }
+    // macOS sends this for plenty that doesn't change the screens' layout, such as the Dock or menu bar.
+    func screensMayHaveChanged() {
+        if currentScreenKey() != screenKey { rebuild() }
+    }
     func rebuild() {
+        rotation = clawds.map(\.lookIndex).max() ?? rotation
+        screenKey = currentScreenKey()
         clawds.forEach { $0.close() }
-        clawds = NSScreen.screens.map { Clawd(screen: $0, hat: hat, gear: gear, suit: suit, cycle: cycle, every: everyMinutes) }
+        clawds = NSScreen.screens.map {
+            let c = Clawd(screen: $0, hat: hat, gear: gear, suit: suit, show: showWindows, cycle: cycle, every: everyMinutes)
+            c.lookIndex = rotation
+            return c
+        }
         // Always draw once, so he's there the moment the desktop is uncovered.
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -1366,7 +1385,7 @@ final class Controller: NSObject {
     func run() {
         rebuild(); schedule(1.0 / 6)
         let nc = NotificationCenter.default
-        nc.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in self?.rebuild() }
+        nc.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in self?.screensMayHaveChanged() }
         nc.addObserver(forName: NSWindow.didChangeOcclusionStateNotification, object: nil, queue: .main) { [weak self] _ in self?.tickAll() }
         let ws = NSWorkspace.shared.notificationCenter
         ws.addObserver(forName: NSWorkspace.screensDidSleepNotification, object: nil, queue: .main) { [weak self] _ in
@@ -1682,6 +1701,38 @@ func selftest() -> Bool {
         fixed.run(800)
         check(fixed.c.scene == nil && fixed.c.currentHat == .crown && fixed.c.wearing == nil, "rotation: a fixed outfit changed")
         runs += 1
+    }
+
+    // The Berserker takes its turn with everyone else.
+    do {
+        let m = Sim(hat: nil, gear: nil, screen: screen), r = m.c
+        var order: [String] = [], swords: [Double] = [], was: String? = nil
+        m.run(45 * 60) {
+            if let w = r.wearing?.name, w != was { order.append(w); if w == "berserker" { swords.append(m.t) } }
+            was = r.wearing?.name
+        }
+        let first = Array(order.prefix(looks.count))
+        check(first == looks.map(\.name), "rotation order: \(first)")
+        let gaps = zip(swords.dropFirst(), swords).map { $0 - $1 }
+        check(gaps.count >= 2 && gaps.allSatisfy { abs($0 - (Double(looks.count) * 50 + 40)) < 2 }, "sword gaps: \(gaps)")
+    }
+    // Rebuilding keeps his place in the rotation, and nothing rebuilds unless the screens changed.
+    do {
+        let k = Controller(); k.showWindows = false; k.cycle = looks; k.rotation = 4
+        k.rebuild()
+        check(k.clawds.allSatisfy { $0.lookIndex == 4 }, "rebuild: lost its starting place")
+        for c in k.clawds { c.lookIndex = 7 }
+        let same = k.clawds.first
+        k.screensMayHaveChanged()
+        check(k.clawds.first === same, "rebuild: a notice with no real change rebuilt him")
+        k.screenKey = "something else"; k.screensMayHaveChanged()
+        check(k.clawds.first !== same && k.clawds.allSatisfy { $0.lookIndex == 7 }, "rebuild: went back to the first look")
+        k.clawds.forEach { $0.close() }
+        for _ in 0..<50 {
+            let fresh = Controller(); fresh.cycle = looks
+            check(fresh.rotation % looks.count != 0, "launch: opened on the Berserker")
+        }
+        let one = Controller(); one.cycle = [looks[1]]; check(one.rotation == 0, "launch: one-look rotation")
     }
 
     // Clicking on the moon

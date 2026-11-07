@@ -23,7 +23,7 @@ Only one copy runs at a time. The options below work on the binary inside the ap
 
 ## His looks
 
-He normally wears the Santa hat. A new look starts every 50 seconds, so he's almost always dressed up: about 42 seconds in the look, then about 8 going back to Santa and waiting for the next one. The Berserker gets 40 seconds longer, because the sword takes a while. If your windows cover him for more than 20 seconds, he's back in the Santa hat and the next look comes 8 seconds after you uncover him.
+He normally wears the Santa hat. A new look starts every 50 seconds, going through all of them in turn, so he's almost always dressed up: about 42 seconds in the look, then about 8 going back to Santa and waiting for the next one. The Berserker comes round like the others, with 40 seconds extra because the sword takes a while, and clicking the moon starts it right away. If your windows cover him for more than 20 seconds, he's back in the Santa hat and the next look comes 8 seconds after you uncover him.
 
 | Look | What he wears |
 | --- | --- |
