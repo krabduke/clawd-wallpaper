@@ -4,7 +4,7 @@
 //   ClawdWallpaper --cycle king,wizard     which looks to rotate through
 //   ClawdWallpaper --look king             wear one look, no changes
 //   ClawdWallpaper --hat crown --wear cape,sword  build a look yourself, no changes (--list shows all)
-//   ClawdWallpaper --demo berserker        play a look's transformation right away
+//   ClawdWallpaper --demo berserker        play a look's transformation right away (--demo moon: as if you clicked the moon)
 //   ClawdWallpaper --bake in.jpg out.jpg   static copy of the wallpaper with Clawd drawn in
 //   ClawdWallpaper --sheet out.png         contact sheet of poses, for checking the art
 //   ClawdWallpaper --selftest              run every outfit through every scene and check the results
@@ -15,6 +15,7 @@
 // pauses while the desktop is covered or the display is asleep.
 import AppKit
 import IOKit.ps
+import ServiceManagement
 
 // Positions are fractions of the wallpaper image (y from the top), so the art lines up with it.
 let imageSize = CGSize(width: 7680, height: 4320)
@@ -25,9 +26,10 @@ let gutsFrac = CGPoint(x: 0.815, y: 0.435)
 let baseUnit: CGFloat = 12                   // points per sprite pixel on a 1710pt-wide screen
 let spritePx: CGFloat = 4                    // bitmap pixels per sprite pixel in live mode
 let canvasUnits: CGFloat = 40                // live sprite canvas, in sprite pixels
-let swordLength: CGFloat = 72, swordHeight: CGFloat = 14
+let swordLength: CGFloat = 72, swordHeight: CGFloat = 22, swordGrip: CGFloat = 7
 let eclipseMeanSeconds = 14400.0             // of visible time
-let holdSeconds = 120.0                      // how long he keeps a look on
+let holdSeconds = 60.0                       // how long he keeps a look on
+let defaultEveryMinutes = 1.5                // Santa time between looks; with the hold, a change every 2.5 minutes
 let coveredReset = 20.0                      // covered this long and the desktop visit starts over
 
 func rgb(_ hex: Int, _ a: CGFloat = 1) -> CGColor {
@@ -43,14 +45,55 @@ let iron = rgb(0x3C3D44), ironLight = rgb(0x7B7D86), ironDark = rgb(0x212227)
 let robe = rgb(0x9C1F2E), robeLight = rgb(0xD64050), wood = rgb(0x7A5230)
 let bone = rgb(0xE6DCC3)
 let pink = rgb(0xE85C9C), cyan = rgb(0x4FC3D9), steel = rgb(0x8E9299), steelLight = rgb(0xC4C8CE), brown = rgb(0x6B4A2E)
+let armorRed = rgb(0xB3201C), armorRedDark = rgb(0x7E1512), armorGold = rgb(0xE0AE2E), armorGoldDark = rgb(0xA87F1C)
+let manhattanBlue = rgb(0x3A8DEB), manhattanLight = rgb(0x8FD2FF), spiderRed = rgb(0xC8202C), spiderBlue = rgb(0x1E4FB0)
+let plagueBlack = rgb(0x45444E), plagueDark = rgb(0x24232A), lacquer = rgb(0x7E1B1B), visor = rgb(0x1B2C45), leaf = rgb(0x5E9B3C)
 
-// To add an item: add a case here, then draw it in drawHat or drawGearBehind/drawGearFront.
-enum Hat: String, CaseIterable { case santa, wizard, crown, party, viking, helm, none }
+// To add an item: add a case here, then draw it in drawHat, drawSprite or drawSuit.
+enum Hat: String, CaseIterable { case santa, wizard, crown, party, viking, helm, ironhelm, laurel, kabuto, bubble, beak, tricorn, none }
 enum Gear: String, CaseIterable { case cape, robe, armor, scarf, sword, scepter, staff, axe }
+
+// A suit recolours the whole of him, where a hat or gear only sits on top.
+enum Suit: String, CaseIterable {
+    case none, ironman, manhattan, spider, toga, samurai, astronaut, plague, pirate
+    var skin: CGColor {
+        switch self {
+        case .ironman: return armorRed
+        case .manhattan: return manhattanBlue
+        case .spider: return spiderRed
+        case .astronaut: return white
+        case .plague: return plagueBlack
+        default: return orange
+        }
+    }
+    var legs: CGColor {
+        switch self {
+        case .ironman: return armorGold
+        case .spider: return spiderBlue
+        case .astronaut: return whiteShade
+        case .manhattan, .plague: return skin
+        default: return orange
+        }
+    }
+    var eyes: CGColor {
+        switch self {
+        case .ironman: return rgb(0xCFF6FF)
+        case .manhattan: return rgb(0xEAF8FF)
+        case .spider: return white
+        case .astronaut: return rgb(0xE8F4FF)
+        case .plague: return rgb(0xE3B341)
+        default: return eyeBlack
+        }
+    }
+    var glow: [CGColor]? {   // nil is his usual warm glow
+        self == .manhattan ? [rgb(0x57B4FF, 0.46), rgb(0x3C8FEF, 0.19), rgb(0x2E6FD0, 0.05), rgb(0x2E6FD0, 0)] : nil
+    }
+}
 
 // A complete outfit he can change into. To add one, add it to `looks`.
 struct Look {
     let name: String, hat: Hat, gear: [Gear]
+    var suit = Suit.none
     let arrival: String      // status line as it lands
     let verbs: [String]      // status lines while he's wearing it
     let spark: CGColor
@@ -79,6 +122,39 @@ let looks = [
     Look(name: "party", hat: .party, gear: [.scarf], arrival: "Shipping on a Friday…", verbs: [
         "Celebrating a passing test…", "Popping confetti in prod…", "Inviting Guts (he declined)…", "Blowing out 200 candles…",
     ], spark: pink),
+    Look(name: "ironman", hat: .ironhelm, gear: [], suit: .ironman, arrival: "Suiting up…", verbs: [
+        "Asking J.A.R.V.I.S. to fix the build…", "Rerouting power to the test suite…", "Privatizing world peace…",
+        "Patching the Mark 85 in prod…", "Offering Guts a much lighter sword…",
+    ], spark: armorGold),
+    Look(name: "manhattan", hat: .none, gear: [], suit: .manhattan, arrival: "Reassembling, atom by atom…", verbs: [
+        "Perceiving all commits simultaneously…", "It is 12 seconds from now. You force-push…",
+        "Moving the Doomsday Clock to 11:59…", "Walking on Mars, ignoring the on-call…",
+        "Nothing ever ends, except this build…", "Rewriting history (not with git)…",
+    ], spark: manhattanLight),
+    Look(name: "spiderman", hat: .none, gear: [], suit: .spider, arrival: "Thwip…", verbs: [
+        "Crawling the web…", "Tingling at a race condition…", "Being friendly, and in your neighborhood…",
+        "Catching a falling server…", "With great power comes great code review…",
+    ], spark: rgb(0xE8ECF4)),
+    Look(name: "senator", hat: .laurel, gear: [], suit: .toga, arrival: "Taking the floor…", verbs: [
+        "Filibustering your pull request…", "Crossing the Rubicon into main…", "Carthago delenda est (rm -rf)…",
+        "Declaring a deploy freeze for the Ides…", "Et tu, linter?…", "Moving to censure Guts…",
+    ], spark: gold),
+    Look(name: "samurai", hat: .kabuto, gear: [], suit: .samurai, arrival: "Drawing the blade…", verbs: [
+        "Cutting one clean commit…", "Contemplating the falling blossoms and the backlog…", "Honoring the senior devs…",
+        "Resting a hand on the hilt, for 200 years…", "Finding Guts's sword a bit much…",
+    ], spark: rgb(0xF2A6B8)),
+    Look(name: "astronaut", hat: .bubble, gear: [], suit: .astronaut, arrival: "Sealing the helmet…", verbs: [
+        "Houston, we have a merge conflict…", "Deploying to the moon…", "Measuring the latency to Earth…",
+        "Planting a flag in production…", "Calculating a very long way down…",
+    ], spark: cyan),
+    Look(name: "plague", hat: .beak, gear: [], suit: .plague, arrival: "Making house calls…", verbs: [
+        "Prescribing leeches for the memory leak…", "Quarantining the flaky test…", "Bleeding the legacy code…",
+        "Diagnosing an imbalance of the humours…", "Sniffing the logs through a beak…",
+    ], spark: rgb(0xB9C46A)),
+    Look(name: "pirate", hat: .tricorn, gear: [], suit: .pirate, arrival: "Hoisting the colours…", verbs: [
+        "Sailing the C…", "Boarding someone else's repo…", "Burying the tech debt…",
+        "Making Guts walk the plank (he refused)…", "Searching for the lost API key…",
+    ], spark: gold),
 ]
 
 enum Eyes: Hashable { case normal, blink, happy, wide, tired, dizzy(Int) }
@@ -97,6 +173,7 @@ struct Pose: Hashable {
     var z = -1                 // sleeping "z" frame, -1 for none
     var status = ""
     var detail = ""
+    var suit = Suit.none
 }
 
 // y grows downward in sprite space; (9, 3.5) is the centre of his body.
@@ -107,6 +184,7 @@ func drawSprite(_ c: CGContext, center: CGPoint, u: CGFloat, pose p: Pose) {
         c.fill(CGRect(x: center.x + (x - 9) * u, y: center.y - (y - 3.5 + p.bob + h) * u, width: w * u, height: h * u))
     }
     let t = CGFloat(p.tail)
+    if p.suit == .astronaut { px(0.5, 0.5, 2.75, 5, whiteShade); px(0.5, 0.5, 2.75, 0.5, steel) }   // air pack
     if p.gear.contains(.sword) {   // a tiny slab strapped to his back, far too big even so
         for i in 0..<15 {
             let k = CGFloat(i)
@@ -118,30 +196,37 @@ func drawSprite(_ c: CGContext, center: CGPoint, u: CGFloat, pose p: Pose) {
     if p.gear.contains(.robe) { drawDrape(px, t: t, main: robe, light: robeLight, trim: white) }
     // Legs
     let lift: (CGFloat, CGFloat) = p.legs == 1 ? (0.75, 0) : p.legs == 2 ? (0, 0.75) : (0, 0)
-    px(4, 6, 1, 1.5 - lift.0, orange); px(6, 6, 1, 1.5 - lift.1, orange)
-    px(11, 6, 1, 1.5 - lift.0, orange); px(13, 6, 1, 1.5 - lift.1, orange)
-    // Body and arms
-    px(3, 0, 12, 6, orange)
-    px(1, 3, 2, 1, orange)
-    switch p.wave {
-    case 1: px(15, 2, 1, 1, orange); px(16, 1, 1, 1, orange)
-    case 2: px(15, 3, 1, 1, orange); px(16, 2, 1, 1, orange)
-    default: px(15, 3, 2, 1, orange)
+    let skin = p.suit.skin, legCol = p.suit.legs, eyeCol = p.suit.eyes
+    if p.suit == .ironman {        // always on the thrusters
+        let flame = 1 + abs(t) * 0.75
+        for x in [CGFloat(4), 11] { px(x, 7.5, 3, flame, rgb(0x6FD3FF, 0.85)); px(x + 0.75, 7.5, 1.5, flame * 0.6, rgb(0xE8FBFF)) }
     }
+    px(4, 6, 1, 1.5 - lift.0, legCol); px(6, 6, 1, 1.5 - lift.1, legCol)
+    px(11, 6, 1, 1.5 - lift.0, legCol); px(13, 6, 1, 1.5 - lift.1, legCol)
+    // Body and arms
+    px(3, 0, 12, 6, skin)
+    px(1, 3, 2, 1, skin)
+    switch p.wave {
+    case 1: px(15, 2, 1, 1, skin); px(16, 1, 1, 1, skin)
+    case 2: px(15, 3, 1, 1, skin); px(16, 2, 1, 1, skin)
+    default: px(15, 3, 2, 1, skin)
+    }
+    drawSuit(p.suit, t: t, wave: p.wave, px)
     // Eyes
     for ex in [CGFloat(5), 11.5] {
         let left = ex == 5
         let x = ex + p.lookX, y = 1.5 + p.lookY
+        if p.suit == .spider { px(x - 0.5, y - 0.25, 2.5, 2.75, eyeBlack) }   // the mask's black rims
         switch p.eyes {
         case .happy:
-            px(left ? 5 : 12.5, 1.5, 0.75, 0.75, eyeBlack)
-            px(left ? 5.75 : 11.75, 2.25, 0.75, 0.75, eyeBlack)
-            px(left ? 5 : 12.5, 3, 0.75, 0.75, eyeBlack)
-        case .blink: px(x, y + 1, 1.5, 0.25, eyeBlack)
-        case .tired: px(x, y + 1, 1.5, 1, eyeBlack)
+            px(left ? 5 : 12.5, 1.5, 0.75, 0.75, eyeCol)
+            px(left ? 5.75 : 11.75, 2.25, 0.75, 0.75, eyeCol)
+            px(left ? 5 : 12.5, 3, 0.75, 0.75, eyeCol)
+        case .blink: px(x, y + 1, 1.5, 0.25, eyeCol)
+        case .tired: px(x, y + 1, 1.5, 1, eyeCol)
         case .wide:
-            px(x - 0.25, y - 0.5, 2, 3, eyeBlack)
-            px(x + 0.25, y, 0.5, 0.5, white)
+            px(x - 0.25, y - 0.5, 2, 3, eyeCol)
+            if p.suit == .none || p.suit.eyes == eyeBlack { px(x + 0.25, y, 0.5, 0.5, white) }
         case .dizzy(let f):
             // A hollow ring with a gap chasing round it, and a dot in the middle.
             let cell: CGFloat = 0.5
@@ -153,10 +238,10 @@ func drawSprite(_ c: CGContext, center: CGPoint, u: CGFloat, pose p: Pose) {
             let gap = (left ? f * 2 : 16 - f * 2) % 16
             let bx = ex - 0.5, by: CGFloat = 1.25
             for (i, r) in ring.enumerated() where (i - gap + 16) % 16 >= 4 {
-                px(bx + r.0 * cell, by + r.1 * cell, cell, cell, eyeBlack)
+                px(bx + r.0 * cell, by + r.1 * cell, cell, cell, eyeCol)
             }
-            px(bx + cell * 2, by + cell * 2, cell, cell, eyeBlack)
-        case .normal: px(x, y, 1.5, 2, eyeBlack)
+            px(bx + cell * 2, by + cell * 2, cell, cell, eyeCol)
+        case .normal: px(x, y, 1.5, 2, eyeCol)
         }
     }
     // Headwear. When crooked it slides down over his left eye.
@@ -233,8 +318,72 @@ func drawHat(_ kind: Hat, t: CGFloat, crooked: Bool, _ hat: Paint) {
         hat(3, -2, 12, 3, iron); hat(4, -3, 10, 1, iron); hat(3, -2, 12, 0.5, ironLight)
         hat(4, -4.5, 1.5, 1.5, iron); hat(12.5, -4.5, 1.5, 1.5, iron); hat(4, -5, 1, 0.5, ironDark); hat(13, -5, 1, 0.5, ironDark)
         for x in [5, 7, 9, 11] as [CGFloat] { hat(x, 0.5, 1, 0.75, bone) }
+    case .ironhelm:
+        hat(4, -1.5, 10, 1.5, armorRed); hat(5, -2.5, 8, 1, armorRed); hat(6.5, -3, 5, 0.5, armorRedDark)
+        hat(7.75, -3, 2.5, 3, armorGold); hat(7.75, -3, 0.5, 3, armorGoldDark)
+    case .laurel:   // a wreath, and on a very small senator
+        hat(3.5, -0.75, 11, 0.75, leaf)
+        for x in [3.5, 5.5, 7.5, 9.5, 11.5, 13.5] as [CGFloat] { hat(x, -1.5, 1, 0.75, rgb(0x82C255)) }
+        hat(8.5, -1.5, 1, 0.75, gold)
+    case .kabuto:
+        hat(5, -2, 8, 2, plagueBlack); hat(6, -3, 6, 1, plagueBlack); hat(6, -3, 6, 0.5, rgb(0x55545C))
+        hat(3, -0.75, 3, 1.75, lacquer); hat(12, -0.75, 3, 1.75, lacquer); hat(3, -0.75, 12, 0.5, gold)
+        hat(5.5, -5.5, 1, 2.5, gold); hat(11.5, -5.5, 1, 2.5, gold); hat(6.25, -3.5, 5.5, 0.75, gold)
+    case .bubble:
+        hat(4, -1.5, 10, 1.5, white); hat(5, -2.5, 8, 1, white); hat(6, -3, 6, 0.5, whiteShade)
+        hat(12.5, -5.5, 0.5, 3, steel); hat(12.25, -6.25, 1, 0.75, red)
+    case .beak:
+        hat(5, -2.5, 8, 2, plagueDark); hat(2, -0.75, 14, 0.75, plagueDark); hat(5, -1, 8, 0.5, rgb(0x5C4A32))
+        hat(7.75, 2.75, 2.5, 1.25, bone); hat(8.25, 4, 1.5, 1.25, bone); hat(8.75, 5.25, 0.5, 1, whiteShade)
+    case .tricorn:
+        hat(3, -1, 12, 1, plagueDark); hat(4.5, -2.5, 9, 1.5, plagueDark); hat(6.5, -3.5, 5, 1, plagueDark)
+        hat(3, -1, 12, 0.25, gold); hat(8, -2.5, 2, 1.25, white); hat(8.25, -2.25, 0.5, 0.5, eyeBlack); hat(9.25, -2.25, 0.5, 0.5, eyeBlack)
+        hat(3, 0.75, 12, 0.25, eyeBlack); hat(4.5, 1, 2.75, 2.5, eyeBlack)   // and the eyepatch, which the hat insists on
     case .none:
         break
+    }
+}
+
+func drawSuit(_ suit: Suit, t: CGFloat, wave: Int, _ px: Paint) {
+    switch suit {
+    case .none:
+        break
+    case .ironman:
+        px(3.75, 0.5, 10.5, 3.75, armorGold); px(3.75, 0.5, 10.5, 0.5, armorGoldDark)
+        px(3, 4.5, 12, 0.5, armorRedDark); px(1, 3, 2, 0.5, armorGold)
+        px(8, 4.5, 2, 1, rgb(0x8FE9FF)); px(8.5, 4.75, 1, 0.5, rgb(0xE8FBFF))   // the arc reactor
+    case .manhattan:
+        px(3, 0, 12, 0.25, manhattanLight); px(3, 0, 0.25, 6, manhattanLight)
+        // The hydrogen atom, on his forehead.
+        px(8, 0.25, 2, 0.25, manhattanLight); px(8, 1.25, 2, 0.25, manhattanLight)
+        px(7.75, 0.5, 0.25, 0.75, manhattanLight); px(10, 0.5, 0.25, 0.75, manhattanLight)
+        px(8.75, 0.75, 0.5, 0.25, white)
+    case .spider:
+        px(3, 3.75, 12, 2.25, spiderBlue)
+        let web = rgb(0x6E0E16)   // just enough to read as webbing, so the eyes stay the loudest thing
+        for x in [4.5, 9, 13.5] as [CGFloat] { px(x, 0, 0.25, 3.75, web) }
+        px(3, 0.75, 12, 0.25, web)
+        px(3, 3.75, 3, 1, spiderRed); px(12, 3.75, 3, 1, spiderRed)
+        px(8.5, 4.25, 1, 1, eyeBlack); px(7.25, 4, 3.5, 0.25, eyeBlack); px(7.25, 5, 3.5, 0.25, eyeBlack)
+    case .toga:
+        px(3, 3.5, 12, 2.5, white); px(3, 5.5, 12, 0.5, whiteShade)
+        for i in 0..<5 { let k = CGFloat(i); px(6 + k * 1.5, 3.5 + k * 0.5, 2, 0.5, robe) }   // the senator's purple stripe
+        px(15, 2, 2, 0.5, white); px(16.5, 1.5, 2.5, 2.5, bone); px(16.5, 1.5, 0.5, 2.5, whiteShade)   // his speech, unabridged
+    case .samurai:
+        px(3, 3.75, 12, 2.25, lacquer)
+        for y in [4.5, 5.25] as [CGFloat] { px(3, y, 12, 0.25, gold) }
+        for x in [5, 8, 11] as [CGFloat] { px(x, 3.75, 0.25, 2.25, rgb(0x4E0F0F)) }
+        px(1, 2.5, 2.5, 2, lacquer); px(1, 3.5, 2.5, 0.25, gold); px(14.5, 2.5, 2.5, 2, lacquer); px(14.5, 3.5, 2.5, 0.25, gold)
+        px(15, 4.5, 6, 0.75, rgb(0x7A7A86)); px(13.5, 4.5, 1.5, 0.75, gold); px(11, 4.5, 2.5, 0.75, brown)   // the sword, in its scabbard
+    case .astronaut:
+        px(3.75, 0.5, 10.5, 3.25, visor); px(4.25, 0.75, 2.5, 0.5, rgb(0x5A7CA8))
+        px(6.5, 4.5, 1, 0.75, red); px(8.5, 4.5, 1, 0.75, cyan); px(10.5, 4.5, 1, 0.75, gold)
+    case .plague:
+        px(3, 3.75, 12, 2.25, plagueDark); px(8.75, 3.75, 0.5, 2.25, rgb(0x5C4A32))
+        px(17, -3, 0.75, 11, wood); px(16.5, -3.25, 1.75, 0.75, gold)   // the cane, for poking at the dying
+    case .pirate:
+        px(3, 3.75, 12, 2.25, rgb(0x6E1F2A)); px(7.5, 3.75, 3, 2.25, white); px(3, 5.25, 12, 0.5, brown); px(8.25, 5.25, 1.5, 0.5, gold)
+        px(16.5, -3, 1, 5, steelLight); px(17.25, -3.5, 0.75, 4.5, steel); px(15.5, 2, 3, 0.75, gold); px(16.5, 2.75, 1, 1, brown)
     }
 }
 
@@ -265,8 +414,8 @@ func hatImage(_ kind: Hat) -> CGImage {
     return c.makeImage()!
 }
 
-func drawGlow(_ c: CGContext, center: CGPoint, radius: CGFloat) {
-    let colors = [rgb(0xE8743F, 0.34), rgb(0xD9633A, 0.13), rgb(0xB84A2E, 0.035), rgb(0xB84A2E, 0)] as CFArray
+func drawGlow(_ c: CGContext, center: CGPoint, radius: CGFloat, colors tint: [CGColor]? = nil) {
+    let colors = (tint ?? [rgb(0xE8743F, 0.34), rgb(0xD9633A, 0.13), rgb(0xB84A2E, 0.035), rgb(0xB84A2E, 0)]) as CFArray
     let g = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB), colors: colors, locations: [0, 0.32, 0.68, 1])!
     c.drawRadialGradient(g, startCenter: center, startRadius: 0, endCenter: center, endRadius: radius, options: [])
 }
@@ -296,7 +445,8 @@ func context(_ w: Int, _ h: Int) -> CGContext {
               bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
 }
 
-// The big slab. x runs hilt to tip, in sprite pixels.
+// The big slab. x runs hilt to tip, in sprite pixels. The shape has to say "sword" on its own:
+// a wide crossguard, a dark fuller down the blade, and a point that's obviously a point.
 func makeSwordImage() -> CGImage {
     let p = spritePx, c = context(Int(swordLength * p), Int(swordHeight * p))
     c.setShouldAntialias(false)
@@ -306,33 +456,42 @@ func makeSwordImage() -> CGImage {
     func cut(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat) {
         c.clear(CGRect(x: x * p, y: (y + swordHeight / 2) * p, width: w * p, height: h * p))
     }
-    let blade = rgb(0x6A6E75), top = rgb(0xDADDE0), upper = rgb(0x8B8F96), low = rgb(0x3F4147), ink = rgb(0x26272B)
-    let wrap = rgb(0x33261D), wrapLight = rgb(0x5E4736)
-    // Pommel and a long, wrapped grip
-    r(0, -1.75, 1.75, 3.5, low); r(0, 1.25, 1.75, 0.5, upper)
-    r(1.75, -1.25, 8, 2.5, wrap)
-    for i in 0..<4 { r(2.25 + CGFloat(i) * 2, -1.25, 0.75, 2.5, wrapLight) }
-    // A plain, stubby guard
-    r(9.75, -6.5, 2, 13, low); r(9.75, 6, 2, 0.5, upper); r(9.75, -6.5, 0.5, 13, ink)
-    // The slab itself, with a blunt angled tip
-    r(11.75, -5.5, 54.25, 11, blade); r(66, -5, 2, 10, blade); r(68, -3.75, 2, 8, blade); r(70, -1.5, 2, 4.5, blade)
-    r(11.75, 1.5, 54.25, 3, upper); r(66, 1.5, 2, 2.5, upper)
-    r(11.75, 4.5, 54.25, 1, top); r(66, 4, 2, 1, top); r(68, 3.25, 2, 1, top); r(70, 2, 2, 1, top)
-    r(11.75, -5.5, 54.25, 1.25, low); r(66, -5, 2, 1, low); r(68, -3.75, 2, 1, low)
-    // Inked hatching along the shadow side, so it sits with the manga art
-    var x: CGFloat = 12.5, i = 0
-    while x < 66 {
-        let len: CGFloat = [2.25, 3.25, 1.5, 2.75, 3.75][i % 5]
-        r(x, -5.25, 0.5, len, ink)
-        r(x + 0.5, -5.25 + len, 0.5, 0.75, low)
-        x += [1.25, 1.75, 1, 2.25][i % 4]; i += 1
+    let blade = rgb(0x6A6E75), top = rgb(0xE4E7EA), upper = rgb(0x9499A0), low = rgb(0x3F4147), ink = rgb(0x26272B)
+    let wrap = rgb(0x4A3322), wrapLight = rgb(0x8A6A4C), brass = rgb(0xC39A3C), brassDark = rgb(0x7E6020)
+    let taper: CGFloat = 58   // where the point starts
+    // The blade, narrowing to a sharp point in steps
+    r(12, -5.5, taper - 12, 11, blade); r(12, 1.5, taper - 12, 3, upper); r(12, 4.5, taper - 12, 1, top); r(12, -5.5, taper - 12, 1.25, low)
+    let steps = 7
+    for i in 0..<steps {
+        let x = taper + CGFloat(i) * 2, half = 5.5 * (1 - CGFloat(i + 1) / CGFloat(steps + 1))
+        r(x, -half, 2, half * 2, blade)
+        r(x, half * 0.3, 2, half * 0.5, upper)
+        r(x, half - 0.75, 2, 0.75, top)
+        r(x, -half, 2, 0.75, low)
     }
+    // Ink hatching on the shadow side, so it sits with the manga art
+    var hx: CGFloat = 12.5, hi = 0
+    while hx < taper - 1 {
+        let len: CGFloat = [1.5, 2.25, 1, 1.75, 2.5][hi % 5]
+        r(hx, -5.25, 0.5, len, ink)
+        hx += [1.25, 1.75, 1, 2.25][hi % 4]; hi += 1
+    }
+    // The fuller
+    r(12, -1, taper - 6, 1.5, ink); r(12, 0.5, taper - 6, 0.5, top)
     // Scars from years of hard use, and chips in both edges
-    for (x, y, w) in [(15, 2.25, 6), (24, 0.5, 4), (30, 3, 3.5), (38, 1, 7), (47, 2.75, 3), (53, 0.25, 5), (61, 2.25, 3.5)] as [(CGFloat, CGFloat, CGFloat)] {
-        r(x, y, w, 0.5, low); r(x + 0.5, y + 0.5, w - 1, 0.25, top)
+    for (x, y, w) in [(15, 2.25, 6), (24, 3, 4), (30, 2.5, 3.5), (38, 2, 7), (47, 2.75, 3), (53, 3, 4)] as [(CGFloat, CGFloat, CGFloat)] {
+        r(x, y, w, 0.5, low)
     }
-    for (x, w) in [(18, 1.25), (33, 0.75), (44, 1.5), (58, 1), (64, 0.75)] as [(CGFloat, CGFloat)] { cut(x, 5, w, 0.5) }
-    for (x, w) in [(23, 1), (37, 1.5), (51, 0.75), (62, 1.25)] as [(CGFloat, CGFloat)] { cut(x, -5.5, w, 0.5) }
+    for (x, w) in [(18, 1.25), (33, 0.75), (44, 1.5), (54, 1)] as [(CGFloat, CGFloat)] { cut(x, 5, w, 0.5) }
+    for (x, w) in [(23, 1), (37, 1.5), (51, 0.75)] as [(CGFloat, CGFloat)] { cut(x, -5.5, w, 0.5) }
+    // A wrapped grip and a heavy pommel
+    r(1.75, -1.5, 8, 3, wrap)
+    for i in 0..<4 { r(2.25 + CGFloat(i) * 2, -1.5, 0.75, 3, wrapLight) }
+    r(0, -2.5, 2, 5, brassDark); r(0, 0.5, 2, 2, brass)
+    // The crossguard, wide and flared, in a colour the blade isn't
+    r(9.5, -9, 2.5, 18, brassDark); r(10.5, -9, 1.5, 18, brass)
+    r(8.5, -11, 4.5, 3, brassDark); r(9.5, -11, 3.5, 3, brass)
+    r(8.5, 8, 4.5, 3, brassDark); r(9.5, 8, 3.5, 3, brass); r(9.5, 10.25, 3.5, 0.75, top)
     return c.makeImage()!
 }
 
@@ -354,7 +513,22 @@ let spinner = ["·", "✢", "✳", "✶", "✻", "✽", "✻", "✶", "✳", "�
 func noAnim(_ l: CALayer) { l.actions = ["position": NSNull(), "contents": NSNull(), "bounds": NSNull(), "transform": NSNull(), "opacity": NSNull(), "hidden": NSNull()] }
 
 struct Spark { let layer: CALayer; var x: CGFloat; var y: CGFloat; var vx: CGFloat; var vy: CGFloat; let dies: Double }
-enum Scene { case sword, eclipse, change }
+enum Scene { case sword, eclipse, change, summon }
+
+// Is the desktop the thing under this point, rather than a window? Clicks reach us wherever they
+// land. Only ordinary windows count: transparent overlays above them (a notch app, a dictation
+// pill) sit over the moon without hiding it. Reads window positions only, no names or contents.
+func desktopIsUnder(_ p: CGPoint) -> Bool {
+    guard let primary = NSScreen.screens.first,
+          let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return false }
+    let flipped = CGPoint(x: p.x, y: primary.frame.height - p.y)
+    return !list.contains { w in
+        guard let layer = w[kCGWindowLayer as String] as? Int, (0..<20).contains(layer),
+              (w[kCGWindowAlpha as String] as? Double ?? 1) > 0,
+              let bounds = w[kCGWindowBounds as String], let rect = CGRect(dictionaryRepresentation: bounds as! CFDictionary) else { return false }
+        return rect.contains(flipped)
+    }
+}
 
 final class Clawd {
     let screen: NSScreen
@@ -370,7 +544,7 @@ final class Clawd {
     let spinWidth: CGFloat
 
     var pose = Pose(), drawn: Pose? = nil
-    var currentHat = Hat.santa, currentGear: [Gear] = []
+    var currentHat = Hat.santa, currentGear: [Gear] = [], currentSuit = Suit.none, drawnGlow = Suit.none
     // The rotation: Santa, then a look for a while, then Santa again, then the next look.
     let cycleLooks: [Look], every: Double, cycling: Bool
     var lookIndex = 0, wearing: Look? = nil, nextCycle = 0.0
@@ -404,14 +578,18 @@ final class Clawd {
     // Scenes
     var scene: Scene? = nil, sceneStart = 0.0
     var swordLayer: CALayer?
-    var swordTimes = (leave: 2.2, push: 0.0, pant: 1.6, lift: 2.6, fall: 1.8, up: 0.5, stare: 2.2, surge: 1.8, swap: 1.4, power: 3.0, sheathe: 0.9)
+    var swordTimes = (leave: 2.2, drag: 0.0, pant: 1.6, lift: 2.6, fall: 1.8, up: 0.5, stare: 2.2, surge: 1.8, swap: 1.4, power: 3.0, sheathe: 0.9, back: 0.0)
+    var parkX: CGFloat = 50        // how far right of home he stops, with all of the sword on screen
     var moonWindow: NSWindow?, moonDisc: CALayer?, moonRing: CALayer?
+    // The blood moon, from clicking on the moon.
+    var bloodWindow: NSWindow?, bloodLayer: CALayer?, bloodStart = 0.0, bloodFadeStart: Double? = nil
+    var desktopUnder: (CGPoint) -> Bool = desktopIsUnder
 
-    init(screen s: NSScreen, hat: Hat?, gear: [Gear]?, show: Bool = true, cycle: [Look] = looks, every minutes: Double = 3) {
+    init(screen s: NSScreen, hat: Hat?, gear: [Gear]?, suit: Suit? = nil, show: Bool = true, cycle: [Look] = looks, every minutes: Double = defaultEveryMinutes) {
         screen = s
         cycleLooks = cycle; every = minutes * 60
         cycling = hat == nil && gear == nil && !cycle.isEmpty   // choosing an outfit yourself fixes it
-        currentHat = hat ?? .santa; currentGear = gear ?? []
+        currentHat = hat ?? .santa; currentGear = gear ?? []; currentSuit = suit ?? Suit.none
         nextCycle = every
         // Same maths as the "Crop" wallpaper placement: aspect fill, centred.
         let f = s.frame
@@ -425,7 +603,7 @@ final class Clawd {
         scale = s.backingScaleFactor
         u = ((baseUnit * f.width / 1710) * scale).rounded() / scale
         homeToEdge = (center.x - f.minX) / u
-        // Reaches from the screen edge to past the sword's tip; only as tall as he needs.
+        // Reaches from the screen edge to past where he stops with the sword; only as tall as he needs.
         let frame = NSRect(x: f.minX, y: (center.y - 30 * u).rounded(), width: (center.x - f.minX + 84 * u).rounded(), height: (60 * u).rounded())
         home = CGPoint(x: center.x - frame.minX, y: center.y - frame.minY)
         window = NSWindow(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
@@ -472,15 +650,17 @@ final class Clawd {
     }
 
     func close() {
-        endEclipse(); window.orderOut(nil)
+        endEclipse(); endBlood(); window.orderOut(nil)
     }
 
-    var visible: Bool { window.occlusionState.contains(.visible) || (moonWindow?.occlusionState.contains(.visible) ?? false) }
+    var visible: Bool {
+        [window, moonWindow, bloodWindow].contains { $0?.occlusionState.contains(.visible) ?? false }
+    }
 
     var desiredInterval: TimeInterval {
         let t = lastT
         if sleeping { return 1 }
-        if scene != nil || pulling || t < dizzyUntil || t - hopStart < 0.6 || t < waveUntil || t < tapUntil || t - lastMoveT < 1.5 { return 1.0 / 10 }
+        if scene != nil || bloodWindow != nil || pulling || t < dizzyUntil || t - hopStart < 0.6 || t < waveUntil || t < tapUntil || t - lastMoveT < 1.5 { return 1.0 / 10 }
         if tired || ProcessInfo.processInfo.isLowPowerModeEnabled { return 0.5 }
         return 1.0 / 3
     }
@@ -489,8 +669,10 @@ final class Clawd {
 
     // MARK: Input
 
-    func handleClick(at p: CGPoint) {
-        guard !sleeping, scene == nil else { return }
+    // Returns true if the click set something off that shouldn't wait for the next tick.
+    @discardableResult func handleClick(at p: CGPoint) -> Bool {
+        if hypot(p.x - moon.x, p.y - moon.y) < moonRadius * 1.05, desktopUnder(p) { return summon(now) }
+        guard !sleeping, scene == nil else { return false }
         let d = hypot(p.x - (center.x + pos.x * u), p.y - (center.y + pos.y * u))
         if d < 9 * u {
             hopStart = lastT; hopHeight = 4; happyUntil = lastT + 0.9
@@ -498,7 +680,25 @@ final class Clawd {
             flinchUntil = lastT + 0.35; wideUntil = lastT + 0.45
             flinchX = p.x > center.x ? -1 : 1
         }
+        return false
     }
+
+    // The moon goes red, he notices, and then he goes for the sword, whatever he was doing.
+    // A fixed outfit stays fixed, and the sword scene is already what you asked for.
+    func summon(_ t: Double) -> Bool {
+        guard cycling else { return false }
+        if bloodWindow == nil { startBlood(t) } else { bloodFadeStart = nil }
+        if scene == .sword || scene == .summon { return true }
+        endEclipse()
+        flyHat?.removeFromSuperlayer(); flyHat = nil; dropHat?.removeFromSuperlayer(); dropHat = nil; swapStage = 0
+        sleeping = false; sleepForced = false; lastMoveT = t
+        pulling = false; spin = 0; lastAngle = nil; dizzyUntil = 0
+        scene = .summon; sceneStart = t
+        return true
+    }
+
+    let dragHand: CGFloat = -8               // where his left arm has the grip, from his centre
+    let dragStride: CGFloat = 6, dragBeat = 0.8
 
     func demo(_ name: String) {
         let t = now
@@ -508,6 +708,7 @@ final class Clawd {
         case "dizzy": dizzyUntil = t + 3.5
         case "battery": simBattery = 7
         case "click": handleClick(at: center)
+        case "moon": _ = summon(t)
         case "sword": startLook(looks[0], t)
         case let n where looks.contains { $0.name == n }: startLook(looks.first { $0.name == n }!, t)
         default: print("unknown demo \(name)")
@@ -549,13 +750,13 @@ final class Clawd {
             if gap > coveredReset {
                 nextCycle = t + every
                 if wearing != nil {
-                    if scene == nil { wearing = nil; currentHat = .santa; currentGear = []; verbStart = t }
+                    if scene == nil { wearing = nil; dress(santaLook); verbStart = t }
                     else { nextCycle = t }   // mid-change: let it finish, then straight back to Santa
                 }
             } else if wearing != nil, t >= nextCycle {
                 // Time's up, and nothing gets to keep him dressed up.
                 if sleeping {
-                    wearing = nil; currentHat = .santa; currentGear = []; nextCycle = t + every   // he wakes up as Santa
+                    wearing = nil; dress(santaLook); nextCycle = t + every   // he wakes up as Santa
                 } else if scene == nil, !pulling, t > dizzyUntil {
                     wearing = nil; startChange(santaLook, t); nextCycle = t + every
                 }
@@ -570,7 +771,7 @@ final class Clawd {
         }
 
         // Defaults for this frame
-        var p = Pose(hat: currentHat, gear: currentGear)
+        var p = Pose(hat: currentHat, gear: currentGear, suit: currentSuit)
         var status: String? = nil, detail: String? = nil
         var target = mouse
         var bobPeriod = tired ? 6.0 : 3.4
@@ -625,6 +826,8 @@ final class Clawd {
         if scene == .sword { movedByScene = updateSword(t, &p, &offset, &status, &detail, &target, &shake, &fallen) }
         if scene == .eclipse { updateEclipse(t, &p, &status, &detail, &target, &shake) }
         if scene == .change { updateChange(t, &p, &status, &detail, &target) }
+        if scene == .summon { updateSummon(t, &p, &status, &detail, &target, &shake) }
+        updateBlood(t)
         if scene == nil, !pulling { offset = .zero }
 
         // Eyes
@@ -701,6 +904,14 @@ final class Clawd {
             drawSprite(spriteCtx, center: CGPoint(x: spriteCtx.width / 2, y: spriteCtx.height / 2), u: spritePx, pose: p)
             sprite.contents = spriteCtx.makeImage()
         }
+        if drawnGlow != currentSuit {
+            if drawnGlow.glow != nil || currentSuit.glow != nil {
+                let gc = context(180, 180)
+                drawGlow(gc, center: CGPoint(x: 90, y: 90), radius: 90, colors: currentSuit.glow)
+                glow.contents = gc.makeImage()
+            }
+            drawnGlow = currentSuit
+        }
         let sx = home.x + (pos.x + shake) * u
         let sy = home.y + (pos.y + (fallen ? -2 : bob) + hop) * u
         let newPos = CGPoint(x: (sx * 2).rounded() / 2, y: (sy * 2).rounded() / 2)
@@ -769,6 +980,10 @@ final class Clawd {
         }
     }
 
+    func dress(_ look: Look, gear: [Gear]? = nil) {
+        currentHat = look.hat; currentGear = gear ?? look.gear; currentSuit = look.suit
+    }
+
     func startChange(_ look: Look, _ t: Double) {
         scene = .change; sceneStart = t; changeTarget = look; swapStage = 0
     }
@@ -807,13 +1022,13 @@ final class Clawd {
             dropHat?.opacity = Float(min(1, k * 5))
             if k >= 1 {
                 dropHat?.removeFromSuperlayer(); dropHat = nil
-                currentHat = look.hat; currentGear = gear
+                dress(look, gear: gear)
                 hopStart = t; hopHeight = 2
                 burst(look.spark, count: 14, t: t)
                 swapStage = 3
             }
         }
-        if swapStage >= 3 { p.hat = currentHat; p.gear = currentGear; p.crooked = false; return true }
+        if swapStage >= 3 { p.hat = currentHat; p.gear = currentGear; p.suit = currentSuit; p.crooked = false; return true }
         p.hat = .none
         return false
     }
@@ -840,8 +1055,10 @@ final class Clawd {
 
     func startSword(_ t: Double, target: Look) {
         scene = .sword; sceneStart = t; changeTarget = target; swapStage = 0
-        let d = homeToEdge + swordLength + 9
-        swordTimes.push = (d / 4).rounded(.up) * 0.8
+        // He drags it in flat, blade trailing behind him, and stops once the tip has cleared the edge.
+        parkX = swordLength - swordGrip - dragHand - homeToEdge + 2
+        swordTimes.drag = ((parkX + homeToEdge + 13) / dragStride).rounded(.up) * dragBeat
+        swordTimes.back = Double(parkX / 30)
         let l = CALayer(); noAnim(l)
         l.contents = makeSwordImage()
         l.magnificationFilter = .nearest
@@ -857,9 +1074,10 @@ final class Clawd {
                      _ target: inout CGPoint, _ shake: inout CGFloat, _ fallen: inout Bool) -> Bool {
         var s = t - sceneStart
         let T = swordTimes
-        let farLeft = -(homeToEdge + 22)
-        let startX = -(homeToEdge + swordLength + 2), endX: CGFloat = 9
-        var swordX = startX, swordLift: CGFloat = 0, angle: CGFloat = 0, size: CGFloat = 1
+        let farLeft = -(homeToEdge + 13)
+        // The pommel sits just past his hand, and the blade runs left from there: tip last, hilt first.
+        func pommel(at x: CGFloat) -> CGFloat { x + dragHand + swordGrip }
+        var swordX = pommel(at: parkX), swordLift: CGFloat = 0, angle: CGFloat = .pi, size: CGFloat = 1
         func walk() { p.legs = Int(t * 6) % 2 == 0 ? 1 : 2 }
         func lookAtGuts() {
             let dx = guts.x - center.x, dy = guts.y - center.y, d = hypot(dx, dy)
@@ -867,25 +1085,27 @@ final class Clawd {
         }
         status = "Fetching something…"; detail = ""
         defer {
-            swordLayer?.setAffineTransform(CGAffineTransform(rotationAngle: angle).scaledBy(x: size, y: size))
+            // Flipped as well as turned, so the light stays on the sword's upper side.
+            swordLayer?.setAffineTransform(CGAffineTransform(rotationAngle: angle).scaledBy(x: size, y: -size))
             swordLayer?.position = CGPoint(x: (home.x + swordX * u).rounded(), y: home.y + (swordLift - 0.5) * u)
         }
         if s < T.leave {                        // wander off the left edge
             off = CGPoint(x: farLeft * CGFloat(s / T.leave), y: 0); walk()
             p.lookX = -1
+            swordX = farLeft - 10               // waiting out of sight, blade further off still
             return true
         }
         s -= T.leave
-        if s < T.push {                         // the tip arrives first, and it keeps on arriving
-            let n = floor(s / 0.8), frac = (s / 0.8) - n
-            swordX = min(endX, startX + 4 * (CGFloat(n) + CGFloat(min(1, frac / 0.55))))
-            off = CGPoint(x: swordX - 9, y: 0)
+        if s < T.drag {                         // he comes back first, the hilt in his hand, hauling the rest after him
+            let n = floor(s / dragBeat), frac = (s / dragBeat) - n
+            let x = min(parkX, farLeft + dragStride * (CGFloat(n) + CGFloat(min(1, frac / 0.55))))
+            off = CGPoint(x: x, y: 0); swordX = pommel(at: x)
             if frac < 0.55 { walk() }
             p.lookX = 1; p.eyes = frac < 0.55 ? .happy : .normal
             status = "Too big, too thick, too heavy…"
             return true
         }
-        s -= T.push; swordX = endX; off = .zero
+        s -= T.drag; off = CGPoint(x: parkX, y: 0)
         if s < T.pant {                         // catch breath
             p.lookX = 0.5; p.eyes = .tired
             status = "Catching breath…"
@@ -936,14 +1156,14 @@ final class Clawd {
         s -= T.swap
         if swapStage < 3 {                      // never left half-dressed, however long the pause was
             flyHat?.removeFromSuperlayer(); flyHat = nil; dropHat?.removeFromSuperlayer(); dropHat = nil
-            currentHat = changeTarget.hat; currentGear = bodyGear; p.hat = currentHat; p.gear = currentGear; swapStage = 3
+            dress(changeTarget, gear: bodyGear); p.hat = currentHat; p.gear = currentGear; p.suit = currentSuit; swapStage = 3
         }
         p.crooked = false
         if s < T.power {                        // and now it weighs nothing
             let top: CGFloat = .pi / 10
-            if s < 0.5 { angle = top * CGFloat(s / 0.5) }
-            else if s < 2.2 { angle = top }
-            else if s < 2.35 { angle = top * CGFloat(1 - (s - 2.2) / 0.15) }
+            if s < 0.5 { angle = .pi - top * CGFloat(s / 0.5) }
+            else if s < 2.2 { angle = .pi - top }
+            else if s < 2.35 { angle = .pi - top * CGFloat(1 - (s - 2.2) / 0.15) }
             else if s < 2.8 { shake = Int(t * 12) % 2 == 0 ? 0.75 : -0.75 }
             p.wave = s < 2.2 ? 1 : 0
             if s >= 2.35, s < 2.35 + 1.0 / 12 { burst(steelLight, count: 10, t: t) }
@@ -957,13 +1177,82 @@ final class Clawd {
             status = "Sheathing it, somehow…"
             return true
         }
-        swordLayer?.removeFromSuperlayer(); swordLayer = nil
-        currentGear = changeTarget.gear; p.gear = currentGear
-        burst(steelLight, count: 8, t: t)
-        hopStart = t; hopHeight = 2
+        s -= T.sheathe
+        if swordLayer != nil {
+            swordLayer?.removeFromSuperlayer(); swordLayer = nil
+            currentGear = changeTarget.gear; p.gear = currentGear
+            burst(steelLight, count: 8, t: t)
+            hopStart = t; hopHeight = 2
+        }
+        if s < T.back {                         // and back to where he started, a lot lighter
+            off = CGPoint(x: parkX * CGFloat(1 - s / T.back), y: 0); walk()
+            p.lookX = -1
+            status = changeTarget.verbs[0]
+            return true
+        }
         scene = nil; swapStage = 0; verbStart = t
         off = .zero
         return true
+    }
+
+    // MARK: The blood moon
+
+    func updateSummon(_ t: Double, _ p: inout Pose, _ status: inout String?, _ detail: inout String?,
+                      _ target: inout CGPoint, _ shake: inout CGFloat) {
+        let s = t - sceneStart
+        target = moon; p.eyes = .wide; detail = ""
+        status = s < 0.6 ? "Hearing the moon…" : "Going to get something…"
+        shake = Int(t * 12) % 2 == 0 ? 0.25 : -0.25
+        if s > 1.3 {
+            let berserker = looks[0]
+            // That's his turn taken, so the rotation doesn't send him straight back for it.
+            if !cycleLooks.isEmpty, cycleLooks[lookIndex % cycleLooks.count].name == berserker.name { lookIndex += 1 }
+            scene = nil
+            startLook(berserker, t)
+        }
+    }
+
+    func startBlood(_ t: Double) {
+        let r = moonRadius, side = r * 6
+        let frame = NSRect(x: moon.x - side / 2, y: moon.y - side / 2, width: side, height: side)
+        let w = NSWindow(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
+        w.isOpaque = false; w.backgroundColor = .clear; w.hasShadow = false; w.ignoresMouseEvents = true
+        w.level = window.level; w.collectionBehavior = window.collectionBehavior
+        w.isReleasedWhenClosed = false
+        let v = NSView(frame: NSRect(origin: .zero, size: frame.size)); v.wantsLayer = true
+        w.contentView = v
+        // Stains the moon's own disc red, so its craters still show through, and glows beyond the edge.
+        let px = 384, c = context(px, px), m = CGFloat(px) / 2, edge: CGFloat = 1.0 / 3
+        let g = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB),
+                           colors: [rgb(0xE01208, 0.74), rgb(0xE8160A, 0.74), rgb(0xFF3A1E, 0.80), rgb(0xE02012, 0.42), rgb(0x9C120C, 0.12), rgb(0x8A1008, 0)] as CFArray,
+                           locations: [0, edge - 0.01, edge + 0.004, edge + 0.05, edge + 0.3, 1])!
+        c.drawRadialGradient(g, startCenter: CGPoint(x: m, y: m), startRadius: 0, endCenter: CGPoint(x: m, y: m), endRadius: m, options: [])
+        let l = CALayer(); noAnim(l)
+        l.contents = c.makeImage()
+        l.frame = CGRect(x: 0, y: 0, width: side, height: side)
+        l.opacity = 0
+        v.layer!.addSublayer(l)
+        if randomEvents { w.orderFront(nil) }
+        bloodWindow = w; bloodLayer = l; bloodStart = t; bloodFadeStart = nil
+    }
+
+    func endBlood() {
+        bloodWindow?.orderOut(nil); bloodWindow = nil; bloodLayer = nil; bloodFadeStart = nil
+    }
+
+    // Stays red for as long as the change is happening, then drains away.
+    func updateBlood(_ t: Double) {
+        guard let l = bloodLayer else { return }
+        if scene != .summon && scene != .sword {
+            if bloodFadeStart == nil { bloodFadeStart = t }
+        } else { bloodFadeStart = nil }
+        var level = min(1, (t - bloodStart) / 0.35) * (0.88 + 0.12 * sin(t * 3))
+        if let f = bloodFadeStart {
+            let k = (t - f) / 2.5
+            if k >= 1 { endBlood(); return }
+            level *= 1 - k
+        }
+        l.opacity = Float(level)
     }
 
     // MARK: The Eclipse
@@ -1040,12 +1329,12 @@ final class Clawd {
 final class Controller: NSObject {
     var clawds: [Clawd] = []
     var timer: Timer?, interval: TimeInterval = 0
-    var hat: Hat?, gear: [Gear]?, cycle: [Look] = looks, everyMinutes = 3.0, demoName: String?, awake = true, wasVisible: Bool? = nil
+    var hat: Hat?, gear: [Gear]?, suit: Suit?, cycle: [Look] = looks, everyMinutes = defaultEveryMinutes, demoName: String?, awake = true, wasVisible: Bool? = nil
     var clickMonitor: Any?
 
     func rebuild() {
         clawds.forEach { $0.close() }
-        clawds = NSScreen.screens.map { Clawd(screen: $0, hat: hat, gear: gear, cycle: cycle, every: everyMinutes) }
+        clawds = NSScreen.screens.map { Clawd(screen: $0, hat: hat, gear: gear, suit: suit, cycle: cycle, every: everyMinutes) }
         // Always draw once, so he's there the moment the desktop is uncovered.
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -1089,7 +1378,9 @@ final class Controller: NSObject {
         // Only ever uses where the click landed, and only wakes up when there is one.
         clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] _ in
             let p = NSEvent.mouseLocation
-            self?.clawds.forEach { $0.handleClick(at: p) }
+            guard let self else { return }
+            // Not short-circuited: every screen hears the click, and any of them can react right away.
+            if self.clawds.map({ $0.handleClick(at: p) }).contains(true) { self.tickAll() }
         }
         if let d = demoName {
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in self?.clawds.forEach { $0.demo(d) } }
@@ -1108,7 +1399,7 @@ func writeImage(_ image: CGImage, to path: String) {
     guard CGImageDestinationFinalize(dest) else { fatalError("cannot write \(path)") }
 }
 
-func bake(input: String, output: String, hat: Hat, gear: [Gear]) {
+func bake(input: String, output: String, hat: Hat, gear: [Gear], suit: Suit = Suit.none) {
     guard let src = CGImageSourceCreateWithURL(URL(fileURLWithPath: input) as CFURL, nil),
           let img = CGImageSourceCreateImageAtIndex(src, 0, nil) else { fatalError("cannot read \(input)") }
     let c = context(img.width, img.height)
@@ -1118,34 +1409,31 @@ func bake(input: String, output: String, hat: Hat, gear: [Gear]) {
     let u = (baseUnit / k).rounded()
     let center = CGPoint(x: (CGFloat(img.width) * anchorFrac.x).rounded(), y: (CGFloat(img.height) * (1 - anchorFrac.y)).rounded())
     drawGlow(c, center: center, radius: 30 * u)
-    let pose = Pose(lookX: 1, lookY: -0.25, hat: hat, gear: gear)
+    let pose = Pose(lookX: 1, lookY: -0.25, hat: hat, gear: gear, suit: suit)
     drawSprite(c, center: center, u: u, pose: pose)
     drawText(c, statusString("✻ Struggling…", "(esc to interrupt)", size: 13 / k), at: CGPoint(x: center.x - 8 * u, y: center.y - 7.75 * u))
     writeImage(c.makeImage()!, to: output)
 }
 
 func sheet(output: String) {
-    let poses: [Pose] = [
-        Pose(lookX: 1, lookY: -0.25),
-        Pose(lookX: 1, lookY: -0.25, hat: .helm, gear: looks[0].gear),
-        Pose(lookX: 1, hat: .crown, gear: looks[1].gear),
-        Pose(lookX: 0.5, lookY: -0.25, hat: .wizard, gear: looks[2].gear),
-        Pose(lookX: -1, hat: .viking, gear: looks[3].gear),
-        Pose(eyes: .happy, hat: .party, gear: looks[4].gear),
+    var poses: [Pose] = [Pose(lookX: 1, lookY: -0.25)]
+    for (i, l) in looks.enumerated() {
+        let dir: CGFloat = i % 3 == 2 ? -1 : 1
+        poses.append(Pose(lookX: dir, lookY: i % 2 == 0 ? -0.25 : 0, eyes: l.name == "party" ? .happy : .normal, hat: l.hat, gear: l.gear, suit: l.suit))
+    }
+    poses += [
         Pose(lookX: 1, wave: 1, hat: .helm, gear: [.armor, .cape]),
-        Pose(lookY: -0.25, hat: .none, gear: [.cape, .scarf]),
         Pose(eyes: .dizzy(2), crooked: true),
         Pose(lookX: 0.5, lookY: -0.5, eyes: .wide),
         Pose(eyes: .blink, hat: .crown, gear: [.robe], z: 2),
-        Pose(eyes: .tired, hat: .helm, gear: [.armor, .cape, .sword]),
     ]
-    let cell = 620, cols = 4, rows = 3
+    let cell = 620, cols = 6, rows = (poses.count + cols - 1) / cols
     let c = context(cell * cols, cell * rows)
     c.setFillColor(rgb(0x000000)); c.fill(CGRect(x: 0, y: 0, width: cell * cols, height: cell * rows))
     for (i, p) in poses.enumerated() {
         let center = CGPoint(x: cell * (i % cols) + cell / 2, y: cell * (rows - 1 - i / cols) + cell / 2 + 20)
         c.saveGState(); c.clip(to: CGRect(x: cell * (i % cols), y: cell * (rows - 1 - i / cols), width: cell, height: cell))
-        drawGlow(c, center: center, radius: 480)
+        drawGlow(c, center: center, radius: 480, colors: p.suit.glow)
         drawSprite(c, center: center, u: 16, pose: p)
         c.restoreGState()
     }
@@ -1160,8 +1448,9 @@ final class Sim {
     var t = 1.0
     var parked: CGPoint { CGPoint(x: c.center.x + 40 * c.u, y: c.center.y - 25 * c.u) }
     var cursorUntouched = false     // true lets him get sleepy, like a real visit where nobody moves the mouse
-    init(hat: Hat?, gear: [Gear]?, screen: NSScreen, every: Double = 3) {
+    init(hat: Hat?, gear: [Gear]?, screen: NSScreen, every: Double = defaultEveryMinutes) {
         c = Clawd(screen: screen, hat: hat, gear: gear, show: false, every: every)
+        c.desktopUnder = { _ in true }
         c.randomEvents = false; c.simBattery = 100; c.nextTap = 1e9; c.fakeMouse = parked; c.lastMouse = parked
         c.fakeT = t; c.lastT = t; c.tick()
     }
@@ -1171,10 +1460,10 @@ final class Sim {
     }
     var swordTotal: Double {
         let T = c.swordTimes
-        return T.leave + T.push + T.pant + T.lift + T.fall + T.up + T.stare + T.surge + T.swap + T.power + T.sheathe
+        return T.leave + T.drag + T.pant + T.lift + T.fall + T.up + T.stare + T.surge + T.swap + T.power + T.sheathe + T.back
     }
     func clean() -> Bool {
-        c.scene == nil && c.swordLayer == nil && c.moonWindow == nil && c.flyHat == nil && c.dropHat == nil
+        c.scene == nil && c.swordLayer == nil && c.moonWindow == nil && c.bloodWindow == nil && c.flyHat == nil && c.dropHat == nil
             && c.root.sublayers?.count == 4 + c.sparks.count
             && c.sprite.affineTransform() == .identity && abs(c.pos.x) < 0.5 && abs(c.pos.y) < 0.5
     }
@@ -1256,15 +1545,29 @@ func selftest() -> Bool {
         let sim = Sim(hat: hat, gear: gear, screen: screen), c = sim.c
         c.startLook(berserker, sim.t)
         var fell = false, lifted = false, offLeft = false, swung = false, sawHalf = false, order: [String] = []
+        var showedAll = false, enteredFirst = true, stayedFlat = true, bodyClipped = false
         var maxRight = -CGFloat.infinity, maxTop = -CGFloat.infinity, minBottom = CGFloat.infinity
         sim.run(sim.swordTotal + 3) {
             if c.sprite.affineTransform() != .identity { fell = true }
             if let l = c.swordLayer {
-                maxRight = max(maxRight, l.frame.maxX); maxTop = max(maxTop, l.frame.maxY); minBottom = min(minBottom, l.frame.minY)
-                if l.position.y > c.home.y - 0.5 * c.u + 0.1 { lifted = true }
-                if abs(l.affineTransform().b) > 0.1 { swung = true }
-                if hat != .helm && c.pose.hat == .helm && !c.currentGear.contains(.armor) { sawHalf = true }
+                let m = l.affineTransform()
+                let tip = CGPoint(x: l.position.x + m.a * swordLength * c.u, y: l.position.y + m.b * swordLength * c.u)
+                maxRight = max(maxRight, l.position.x); maxTop = max(maxTop, tip.y - c.window.frame.height); minBottom = min(minBottom, l.frame.minY)
+                let dragging = c.drawnText.hasPrefix("Too big, too thick, too heavy") && c.currentHat == hat
+                if dragging && abs(m.b) > 0.001 { stayedFlat = false }    // it's pulled along the ground, never lifted
+                if dragging && abs(l.position.y - (c.home.y - 0.5 * c.u)) > 0.1 { stayedFlat = false }
+                if c.drawnText.hasPrefix("Lifted") && l.position.y > c.home.y - 0.5 * c.u + 0.1 { lifted = true }
+                if c.drawnText.hasPrefix("Not so heavy") && abs(m.b) > 0.1 { swung = true }
+                // The moment you see any of him coming back, the crossguard has to be right behind him.
+                if dragging, c.pos.x > -c.homeToEdge - 8, c.pos.x < -c.homeToEdge {
+                    let guardX = l.position.x - 11 * c.u
+                    if guardX < c.home.x + (c.pos.x - 14) * c.u { enteredFirst = false }
+                }
+                // Stopped: the whole of it on screen, tip included.
+                if c.drawnText.hasPrefix("Catching breath"), tip.x >= 0, abs(tip.y - l.position.y) < 0.5 { showedAll = true }
             }
+            if c.home.x + (c.pos.x + 10) * c.u > c.window.frame.width { bodyClipped = true }
+            if c.swordLayer != nil, hat != .helm, c.pose.hat == .helm, !c.currentGear.contains(.armor) { sawHalf = true }
             if c.pos.x < -(c.homeToEdge + 12) { offLeft = true }
             let line = String(c.drawnText.split(separator: "|").first ?? "")
             if order.last != line { order.append(line) }
@@ -1274,13 +1577,17 @@ func selftest() -> Bool {
         check(swung, "\(name): never swung it")
         check(offLeft, "\(name): never left the screen")
         check(!sawHalf, "\(name): helm on before the armour")
-        check(maxRight <= c.window.frame.width + 1, "\(name): tip clipped on the right (\(maxRight))")
-        check(maxTop <= c.window.frame.height + 1, "\(name): swing clipped at the top (\(maxTop))")
+        check(maxRight <= c.window.frame.width + 1, "\(name): hilt clipped on the right (\(maxRight))")
+        check(!bodyClipped, "\(name): walked out of his window")
+        check(maxTop <= 1, "\(name): swing clipped at the top (\(maxTop))")
+        check(showedAll, "\(name): never showed the whole sword")
+        check(enteredFirst, "\(name): the blade came on screen without the hilt")
+        check(stayedFlat, "\(name): the sword left the ground while he was dragging it")
         check(minBottom >= -1, "\(name): swing clipped at the bottom (\(minBottom))")
         check(sim.clean(), "\(name): not clean afterwards")
         check(c.currentHat == .helm && Set(c.currentGear) == Set(berserker.gear), "\(name): wrong outfit afterwards: \(c.currentHat) \(c.currentGear)")
         check(!c.pose.crooked, "\(name): helm still crooked")
-        for want in ["Fetching something…", "Lifted it 1px…", "Struggling…", "Reading the Armor's terms…", "Not so heavy now…"] {
+        for want in ["Fetching something…", "Catching breath…", "Lifted it 1px…", "Struggling…", "Reading the Armor's terms…", "Not so heavy now…"] {
             check(order.contains(want), "\(name): missing status \(want)")
         }
         // Covered part way through: he must still end up fully dressed.
@@ -1297,27 +1604,27 @@ func selftest() -> Bool {
     do {
         let sim = Sim(hat: nil, gear: nil, screen: screen), c = sim.c
         check(c.cycling && c.currentHat == .santa && c.currentGear.isEmpty, "rotation: doesn't start as Santa")
-        sim.run(170)
+        sim.run(c.every - 10)
         check(c.scene == nil && c.currentHat == .santa, "rotation: changed too early")
         for (i, look) in (looks + looks).enumerated() {
             sim.run(max(0, c.nextCycle - sim.t) + 1)
             check(c.wearing?.name == look.name, "rotation \(i): expected \(look.name), got \(c.wearing?.name ?? "nothing")")
             check(c.scene != nil, "rotation \(i): \(look.name) started without a scene")
             sim.run(look.name == "berserker" ? sim.swordTotal + 2 : 6)
-            check(sim.clean() && c.currentHat == look.hat && Set(c.currentGear) == Set(look.gear), "rotation \(i): \(look.name) not on: \(c.currentHat) \(c.currentGear)")
+            check(sim.clean() && c.currentHat == look.hat && Set(c.currentGear) == Set(look.gear) && c.currentSuit == look.suit, "rotation \(i): \(look.name) not on: \(c.currentHat) \(c.currentGear) \(c.currentSuit)")
             check(look.verbs.contains { c.drawnText.hasPrefix($0) }, "rotation \(i): wrong status: \(c.drawnText)")
             let left = c.nextCycle - sim.t
             check(left > holdSeconds * 0.5 && left <= holdSeconds + 40, "rotation \(i): holds for \(left)s")
             sim.run(left + 1)
             check(c.wearing == nil && c.scene == .change, "rotation \(i): not heading back to Santa")
             sim.run(6)
-            check(sim.clean() && c.currentHat == .santa && c.currentGear.isEmpty, "rotation \(i): not back to Santa: \(c.currentHat) \(c.currentGear)")
+            check(sim.clean() && c.currentHat == .santa && c.currentGear.isEmpty && c.currentSuit == .none, "rotation \(i): not back to Santa: \(c.currentHat) \(c.currentGear) \(c.currentSuit)")
             check(abs(c.nextCycle - sim.t - c.every) < 10, "rotation \(i): next change in \(c.nextCycle - sim.t)s")
         }
         // A short visit never gets there: being covered starts it over.
         let due = c.nextCycle
         sim.t = due - 5; sim.run(1); sim.t += coveredReset + 5; sim.run(1)
-        check(c.scene == nil && c.currentHat == .santa && c.nextCycle > sim.t + 100, "rotation: being covered didn't restart it")
+        check(c.scene == nil && c.currentHat == .santa && c.nextCycle > sim.t + c.every * 0.5, "rotation: being covered didn't restart it")
         // Covered while wearing a look: back as Santa.
         c.startLook(looks[1], sim.t); sim.run(6); check(c.currentHat == .crown, "rotation: crown not on")
         sim.t += coveredReset + 5; sim.run(1)
@@ -1338,7 +1645,7 @@ func selftest() -> Bool {
             check(i.currentHat == .santa && i.sleeping, "untouched: should end up asleep as Santa: \(i.currentHat), asleep \(i.sleeping)")
             // Waking him shouldn't set off a change on the spot.
             idle.t += 1; i.fakeMouse = CGPoint(x: i.center.x + 100, y: i.center.y); idle.run(1)
-            check(!i.sleeping && i.scene == nil && i.nextCycle > idle.t + 100, "untouched: waking set off a change: scene \(String(describing: i.scene)), next in \(i.nextCycle - idle.t)")
+            check(!i.sleeping && i.scene == nil && i.nextCycle > idle.t + c.every * 0.5, "untouched: waking set off a change: scene \(String(describing: i.scene)), next in \(i.nextCycle - idle.t)")
             // Put to sleep in a look: wakes up as Santa.
             let s3 = Sim(hat: nil, gear: nil, screen: screen), j = s3.c
             j.startLook(looks[1], s3.t); s3.run(6); j.sleeping = true; s3.run(holdSeconds + 5)
@@ -1358,6 +1665,65 @@ func selftest() -> Bool {
         check(fixed.c.scene == nil && fixed.c.currentHat == .crown && fixed.c.wearing == nil, "rotation: a fixed outfit changed")
         runs += 1
     }
+
+    // Clicking on the moon
+    do {
+        func onMoon(_ c: Clawd) -> CGPoint { CGPoint(x: c.moon.x + c.moonRadius * 0.5, y: c.moon.y) }
+        func fullChange(_ s: Sim, _ what: String) {
+            let c = s.c
+            check(c.bloodWindow != nil && c.scene == .summon, "moon \(what): didn't start")
+            s.run(0.5); check((c.bloodLayer?.opacity ?? 0) > 0.7, "moon \(what): not red yet")
+            s.run(1.2); check(c.scene == .sword && c.wearing?.name == "berserker", "moon \(what): not going for the sword")
+            check(c.bloodWindow != nil, "moon \(what): red gone too soon")
+            s.run(s.swordTotal + 4)
+            check(s.clean() && c.currentHat == .helm && c.currentSuit == .none && Set(c.currentGear) == Set(looks[0].gear), "moon \(what): not dressed: \(c.currentHat) \(c.currentGear) \(c.currentSuit) \(String(describing: c.scene))")
+        }
+        // Past the edge, or behind a window: nothing.
+        let a = Sim(hat: nil, gear: nil, screen: screen)
+        a.c.handleClick(at: CGPoint(x: a.c.moon.x + a.c.moonRadius * 1.3, y: a.c.moon.y)); a.run(0.2)
+        check(a.c.bloodWindow == nil && a.c.scene == nil, "moon: a click beside it set it off")
+        a.c.desktopUnder = { _ in false }
+        check(!a.c.handleClick(at: onMoon(a.c)) && a.c.bloodWindow == nil, "moon: a click on a window over it set it off")
+        a.c.desktopUnder = { _ in true }
+        // Idle, then back to the normal rotation, without doing the berserker twice.
+        check(a.c.handleClick(at: onMoon(a.c)), "moon: click didn't count")
+        fullChange(a, "idle")
+        a.run(max(0, a.c.nextCycle - a.t) + 8)
+        check(a.c.wearing == nil && a.c.currentHat == .santa, "moon: never went back to Santa")
+        a.run(max(0, a.c.nextCycle - a.t) + 1)
+        check(a.c.wearing?.name == looks[1].name, "moon: rotation didn't resume at the next look: \(a.c.wearing?.name ?? "nothing")")
+        // Rotation had already got past the berserker: stays where it was.
+        let b = Sim(hat: nil, gear: nil, screen: screen)
+        b.c.lookIndex = 3; b.c.handleClick(at: onMoon(b.c)); fullChange(b, "mid-rotation")
+        check(b.c.lookIndex == 3, "moon: rotation lost its place")
+        // From any other state, right away.
+        let asleep = Sim(hat: nil, gear: nil, screen: screen)
+        asleep.c.sleeping = true; asleep.run(1); check(asleep.c.handleClick(at: onMoon(asleep.c)), "moon: asleep ignored"); fullChange(asleep, "asleep")
+        let ecl = Sim(hat: nil, gear: nil, screen: screen)
+        ecl.c.startEclipse(ecl.t); ecl.run(5); ecl.c.handleClick(at: onMoon(ecl.c)); check(ecl.c.moonWindow == nil, "moon: eclipse left running"); fullChange(ecl, "eclipse")
+        let mid = Sim(hat: nil, gear: nil, screen: screen)
+        mid.c.startLook(looks[1], mid.t); mid.run(0.8); mid.c.handleClick(at: onMoon(mid.c)); fullChange(mid, "mid-change")
+        for look in looks {   // and out of every other look, including from the armour itself
+            let l = Sim(hat: nil, gear: nil, screen: screen)
+            l.c.startLook(look, l.t); l.run(look.name == "berserker" ? l.swordTotal + 2 : 6)
+            l.c.handleClick(at: onMoon(l.c)); fullChange(l, "from \(look.name)")
+        }
+        // Mid-sword: glows, but doesn't restart him.
+        let sw = Sim(hat: nil, gear: nil, screen: screen)
+        sw.c.startLook(looks[0], sw.t); sw.run(4); let began = sw.c.sceneStart
+        check(sw.c.handleClick(at: onMoon(sw.c)) && sw.c.sceneStart == began && sw.c.bloodWindow != nil, "moon: restarted a sword scene")
+        // Paused half way through: still ends up dressed and tidy.
+        let pause = Sim(hat: nil, gear: nil, screen: screen)
+        pause.c.handleClick(at: onMoon(pause.c)); pause.run(0.5); pause.t += 500; pause.run(1); pause.run(pause.swordTotal + 4)
+        check(pause.clean() && pause.c.currentSuit == .none, "moon: long pause left a mess")
+        // A fixed outfit stays fixed.
+        let fixed = Sim(hat: .crown, gear: [.cape], screen: screen)
+        check(!fixed.c.handleClick(at: onMoon(fixed.c)) && fixed.c.bloodWindow == nil && fixed.c.scene == nil, "moon: changed a fixed outfit")
+        runs += 1
+    }
+    // The real window check: whatever it answers, it must not crash, and it must be honest about windows.
+    _ = desktopIsUnder(CGPoint(x: 10, y: 10))
+
     for f in failures.prefix(40) { print("FAIL", f) }
     print("\(runs) runs, \(failures.count) failures")
     return failures.isEmpty
@@ -1373,7 +1739,8 @@ func renderFrame(_ c: Clawd, wall: CGImage?, screen f: CGRect) -> CGImage {
         x.draw(w, in: CGRect(x: (f.width - dw) / 2, y: (f.height - dh) / 2, width: dw, height: dh))
     }
     x.saveGState(); x.translateBy(x: c.window.frame.minX - f.minX, y: c.window.frame.minY - f.minY); c.root.render(in: x); x.restoreGState()
-    if let m = c.moonWindow, let l = m.contentView?.layer {
+    for m in [c.bloodWindow, c.moonWindow].compactMap({ $0 }) {
+        guard let l = m.contentView?.layer else { continue }
         x.saveGState(); x.translateBy(x: m.frame.minX - f.minX, y: m.frame.minY - f.minY); l.render(in: x); x.restoreGState()
     }
     return x.makeImage()!
@@ -1419,7 +1786,7 @@ func renderFrames(dir: String, wallpaper: String?) {
     var m = T.leave
     let swordTimes: [Double] = {
         var r: [Double] = [1.0]
-        r += [m + T.push * 0.3, m + T.push * 0.9]; m += T.push
+        r += [m + T.drag * 0.12, m + T.drag * 0.2, m + T.drag * 0.3, m + T.drag * 0.5, m + T.drag * 0.75]; m += T.drag
         r += [m + 0.8]; m += T.pant
         r += [m + 2.2]; m += T.lift
         r += [m + 0.9]; m += T.fall + T.up
@@ -1427,11 +1794,12 @@ func renderFrames(dir: String, wallpaper: String?) {
         r += [m + 1.0]; m += T.surge
         r += [m + 0.3, m + 0.9, m + 1.3]; m += T.swap
         r += [m + 0.6, m + 2.0, m + 2.45]; m += T.power
-        r += [m + 0.5, m + T.sheathe + 0.3, m + T.sheathe + 3]
+        r += [m + 0.5, m + T.sheathe + 0.8, m + T.sheathe + T.back + 3]
         return r
     }()
     probe.c.swordLayer?.removeFromSuperlayer()
     shoot("sword", hat: .santa, gear: [], times: swordTimes, cols: 4, setup: { $0.c.startLook(looks[0], $0.t) })
+    shoot("moon", hat: nil, gear: nil, times: [0.1, 0.5, 1.2, 2.5, 5, 40, 42, 45, 49], setup: { $0.c.handleClick(at: $0.c.moon) })
     shoot("eclipse", times: [5, 11, 15, 17, 20, 25, 28, 31, 35, 39], setup: { $0.c.startEclipse($0.t) })
     let closeUp = CGRect(x: 0, y: 0, width: 760, height: 760)
     func close(_ name: String, hat: Hat? = .santa, gear: [Gear]? = [], times: [Double], setup: (Sim) -> Void, each: ((Sim) -> Void)? = nil) {
@@ -1474,10 +1842,11 @@ func option(_ name: String) -> String? {
 if args.contains("--list") {
     print("--look   " + looks.map(\.name).joined(separator: ", ") + " (one outfit, no changes)")
     print("--cycle  a comma list of those looks, to rotate through")
-    print("--every  minutes on the desktop between changes (default 3)")
+    print("--every  minutes on the desktop between changes (default \(defaultEveryMinutes))")
     print("--hat    " + Hat.allCases.map(\.rawValue).joined(separator: ", "))
     print("--wear   none, or a comma list of: " + Gear.allCases.map(\.rawValue).joined(separator: ", "))
-    print("--demo   " + looks.map(\.name).joined(separator: ", ") + ", eclipse, sleep, dizzy, battery, click")
+    print("--suit   " + Suit.allCases.map(\.rawValue).joined(separator: ", "))
+    print("--demo   " + looks.map(\.name).joined(separator: ", ") + ", moon, eclipse, sleep, dizzy, battery, click")
     exit(0)
 }
 func parseHat(_ v: String) -> Hat {
@@ -1491,6 +1860,10 @@ func parseGear(_ v: String) -> [Gear] {
         return g
     }
 }
+func parseSuit(_ v: String) -> Suit {
+    guard let s = Suit(rawValue: v) else { print("unknown suit \(v), try --list"); exit(1) }
+    return s
+}
 func parseLook(_ v: String) -> Look {
     if v == "santa" { return santaLook }
     guard let l = looks.first(where: { $0.name == v }) else { print("unknown look \(v), try --list"); exit(1) }
@@ -1498,16 +1871,32 @@ func parseLook(_ v: String) -> Look {
 }
 var chosenHat = option("--hat").map(parseHat)
 var chosenGear = option("--wear").map(parseGear)
-if let v = option("--look") { let l = parseLook(v); chosenHat = l.hat; chosenGear = l.gear }
+var chosenSuit = option("--suit").map(parseSuit)
+if let v = option("--look") { let l = parseLook(v); chosenHat = l.hat; chosenGear = l.gear; chosenSuit = l.suit }
+if chosenSuit != nil && chosenHat == nil && chosenGear == nil { chosenHat = Hat.none; chosenGear = [] }
 if chosenHat != nil && chosenGear == nil { chosenGear = [] }
 if chosenGear != nil && chosenHat == nil { chosenHat = Hat.none }
 let chosenCycle = option("--cycle")?.split(separator: ",").map { parseLook(String($0)) }.filter { $0.name != "santa" } ?? looks
-let chosenEvery = max(0.2, option("--every").flatMap(Double.init) ?? 3)
+let chosenEvery = max(0.2, option("--every").flatMap(Double.init) ?? defaultEveryMinutes)
 let demoScene = option("--demo")
-if args.count == 3, args[0] == "--bake" { bake(input: args[1], output: args[2], hat: chosenHat ?? .santa, gear: chosenGear ?? []); exit(0) }
+if args.count == 3, args[0] == "--bake" { bake(input: args[1], output: args[2], hat: chosenHat ?? .santa, gear: chosenGear ?? [], suit: chosenSuit ?? Suit.none); exit(0) }
 if args.count == 2, args[0] == "--sheet" { sheet(output: args[1]); exit(0) }
 if args.first == "--selftest" { _ = NSApplication.shared; exit(selftest() ? 0 : 1) }
 if args.first == "--frames", args.count >= 2 { _ = NSApplication.shared; renderFrames(dir: args[1], wallpaper: args.count > 2 ? args[2] : nil); exit(0) }
+
+// Installed as ClawdWallpaper.app, he opens at login like any other app.
+// `--no-login` takes him off the login items and quits.
+if Bundle.main.bundleURL.pathExtension == "app" {
+    let login = SMAppService.mainApp
+    if args.contains("--no-login") {
+        try? login.unregister()
+        print("removed from login items")
+        exit(0)
+    }
+    if login.status != .enabled {
+        do { try login.register() } catch { print("couldn't add to login items: \(error)") }
+    }
+}
 
 // Only ever one copy running.
 let lock = open(NSTemporaryDirectory() + "clawd-wallpaper.lock", O_CREAT | O_RDWR, 0o600)
@@ -1518,6 +1907,7 @@ app.setActivationPolicy(.accessory)
 let controller = Controller()
 controller.hat = chosenHat
 controller.gear = chosenGear
+controller.suit = chosenSuit
 controller.cycle = chosenCycle
 controller.everyMinutes = chosenEvery
 controller.demoName = demoScene
