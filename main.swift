@@ -28,8 +28,8 @@ let spritePx: CGFloat = 4                    // bitmap pixels per sprite pixel i
 let canvasUnits: CGFloat = 40                // live sprite canvas, in sprite pixels
 let swordLength: CGFloat = 72, swordHeight: CGFloat = 22, swordGrip: CGFloat = 7
 let eclipseMeanSeconds = 14400.0             // of visible time
-let holdSeconds = 60.0                       // how long he keeps a look on
-let defaultEveryMinutes = 1.5                // Santa time between looks; with the hold, a change every 2.5 minutes
+let holdSeconds = 42.0                       // how long he keeps a look on
+let defaultEveryMinutes = 8.0 / 60           // Santa time between looks; with the hold, a new look every 50 seconds
 let coveredReset = 20.0                      // covered this long and the desktop visit starts over
 
 func rgb(_ hex: Int, _ a: CGFloat = 1) -> CGColor {
@@ -1621,9 +1621,23 @@ func selftest() -> Bool {
             check(sim.clean() && c.currentHat == .santa && c.currentGear.isEmpty && c.currentSuit == .none, "rotation \(i): not back to Santa: \(c.currentHat) \(c.currentGear) \(c.currentSuit)")
             check(abs(c.nextCycle - sim.t - c.every) < 10, "rotation \(i): next change in \(c.nextCycle - sim.t)s")
         }
+        // One new look every 50 seconds, Santa for only a few of them.
+        check(abs(holdSeconds + c.every - 50) < 0.01, "rotation: period is \(holdSeconds + c.every)s")
+        do {
+            let m = Sim(hat: nil, gear: nil, screen: screen), r = m.c
+            r.lookIndex = 1   // past the Berserker, whose longer scene is measured below
+            var starts: [Double] = [], santa = 0, frames = 0, was: String? = nil
+            m.run(330) {
+                if let w = r.wearing?.name, w != was { starts.append(m.t) }
+                was = r.wearing?.name
+                if r.wearing?.name != "berserker", starts.count >= 1 { frames += 1; if r.currentHat == .santa && r.currentSuit == .none && r.scene == nil { santa += 1 } }
+            }
+            let gaps = zip(starts.dropFirst(), starts).map { $0 - $1 }.filter { $0 < 60 }
+            check(!gaps.isEmpty && gaps.allSatisfy { abs($0 - 50) < 1 }, "rotation: gaps between looks: \(gaps)")
+            check(Double(santa) / Double(max(frames, 1)) < 0.15, "rotation: Santa \(santa) of \(frames) frames")
+        }
         // A short visit never gets there: being covered starts it over.
-        let due = c.nextCycle
-        sim.t = due - 5; sim.run(1); sim.t += coveredReset + 5; sim.run(1)
+        c.nextCycle = sim.t + 5; sim.run(1); sim.t += coveredReset + 5; sim.run(1)
         check(c.scene == nil && c.currentHat == .santa && c.nextCycle > sim.t + c.every * 0.5, "rotation: being covered didn't restart it")
         // Covered while wearing a look: back as Santa.
         c.startLook(looks[1], sim.t); sim.run(6); check(c.currentHat == .crown, "rotation: crown not on")
@@ -1636,16 +1650,20 @@ func selftest() -> Bool {
         check(c.wearing != nil, "rotation: didn't resume after sleep")
         // Nobody touching the mouse: the armour still has to come off by itself.
         do {
-            let idle = Sim(hat: nil, gear: nil, screen: screen), i = idle.c
+            let idle = Sim(hat: nil, gear: nil, screen: screen, every: 1.5), i = idle.c
             idle.cursorUntouched = true
-            idle.run(c.every + idle.swordTotal + holdSeconds + 60)
+            idle.run(i.every + idle.swordTotal + holdSeconds + 40 + 5)
             check(i.currentHat == .santa && i.currentGear.isEmpty && i.wearing == nil,
                   "untouched: still dressed up after the hold: \(i.currentHat) \(i.currentGear), asleep \(i.sleeping)")
             idle.run(400)
             check(i.currentHat == .santa && i.sleeping, "untouched: should end up asleep as Santa: \(i.currentHat), asleep \(i.sleeping)")
             // Waking him shouldn't set off a change on the spot.
             idle.t += 1; i.fakeMouse = CGPoint(x: i.center.x + 100, y: i.center.y); idle.run(1)
-            check(!i.sleeping && i.scene == nil && i.nextCycle > idle.t + c.every * 0.5, "untouched: waking set off a change: scene \(String(describing: i.scene)), next in \(i.nextCycle - idle.t)")
+            check(!i.sleeping && i.scene == nil && i.nextCycle > idle.t + i.every * 0.5, "untouched: waking set off a change: scene \(String(describing: i.scene)), next in \(i.nextCycle - idle.t)")
+            // On the default short cycle he still finds a Santa moment to fall asleep in.
+            let quick = Sim(hat: nil, gear: nil, screen: screen), q = quick.c
+            quick.cursorUntouched = true; quick.run(420)
+            check(q.sleeping && q.currentHat == .santa && q.scene == nil, "short cycle: never fell asleep: \(q.currentHat), asleep \(q.sleeping)")
             // Put to sleep in a look: wakes up as Santa.
             let s3 = Sim(hat: nil, gear: nil, screen: screen), j = s3.c
             j.startLook(looks[1], s3.t); s3.run(6); j.sleeping = true; s3.run(holdSeconds + 5)
@@ -1688,7 +1706,7 @@ func selftest() -> Bool {
         // Idle, then back to the normal rotation, without doing the berserker twice.
         check(a.c.handleClick(at: onMoon(a.c)), "moon: click didn't count")
         fullChange(a, "idle")
-        a.run(max(0, a.c.nextCycle - a.t) + 8)
+        a.run(max(0, a.c.nextCycle - a.t) + 5)
         check(a.c.wearing == nil && a.c.currentHat == .santa, "moon: never went back to Santa")
         a.run(max(0, a.c.nextCycle - a.t) + 1)
         check(a.c.wearing?.name == looks[1].name, "moon: rotation didn't resume at the next look: \(a.c.wearing?.name ?? "nothing")")
@@ -1842,7 +1860,7 @@ func option(_ name: String) -> String? {
 if args.contains("--list") {
     print("--look   " + looks.map(\.name).joined(separator: ", ") + " (one outfit, no changes)")
     print("--cycle  a comma list of those looks, to rotate through")
-    print("--every  minutes on the desktop between changes (default \(defaultEveryMinutes))")
+    print("--every  minutes as Santa between looks (default \(String(format: "%.2f", defaultEveryMinutes)), so a new look every \(Int(holdSeconds + defaultEveryMinutes * 60)) seconds)")
     print("--hat    " + Hat.allCases.map(\.rawValue).joined(separator: ", "))
     print("--wear   none, or a comma list of: " + Gear.allCases.map(\.rawValue).joined(separator: ", "))
     print("--suit   " + Suit.allCases.map(\.rawValue).joined(separator: ", "))
@@ -1877,7 +1895,7 @@ if chosenSuit != nil && chosenHat == nil && chosenGear == nil { chosenHat = Hat.
 if chosenHat != nil && chosenGear == nil { chosenGear = [] }
 if chosenGear != nil && chosenHat == nil { chosenHat = Hat.none }
 let chosenCycle = option("--cycle")?.split(separator: ",").map { parseLook(String($0)) }.filter { $0.name != "santa" } ?? looks
-let chosenEvery = max(0.2, option("--every").flatMap(Double.init) ?? defaultEveryMinutes)
+let chosenEvery = max(0.05, option("--every").flatMap(Double.init) ?? defaultEveryMinutes)
 let demoScene = option("--demo")
 if args.count == 3, args[0] == "--bake" { bake(input: args[1], output: args[2], hat: chosenHat ?? .santa, gear: chosenGear ?? [], suit: chosenSuit ?? Suit.none); exit(0) }
 if args.count == 2, args[0] == "--sheet" { sheet(output: args[1]); exit(0) }

@@ -1,6 +1,6 @@
 # clawd-wallpaper
 
-A tiny pixel Claude Code mascot in a Santa hat who lives on your Mac desktop, under your icons and windows. Leave him on screen for a couple of minutes and he changes: he hauls in a giant sword and ends up in Berserker armour, and later on he's Iron Man, Doctor Manhattan, a Roman senator, and more. Click the moon and the Berserker change starts right away. It was made as a funny contrast to a very serious Berserk wallpaper.
+A tiny pixel Claude Code mascot in a Santa hat who lives on your Mac desktop, under your icons and windows. Leave him on screen for a few seconds and he changes: he hauls in a giant sword and ends up in Berserker armour, and later on he's Iron Man, Doctor Manhattan, a Roman senator, and more. Click the moon and the Berserker change starts right away. It was made as a funny contrast to a very serious Berserk wallpaper.
 
 ![Outfits and expressions](docs/poses.png)
 
@@ -23,7 +23,7 @@ Only one copy runs at a time. The options below work on the binary inside the ap
 
 ## His looks
 
-He normally wears the Santa hat. After 90 seconds on the desktop he changes into the next look, keeps it for about a minute, then goes back to Santa by himself until the next change, so something happens every 2.5 minutes. The Berserker gets about 40 seconds longer, because the sword takes a while. Only a long visit counts: if your windows cover him for more than 20 seconds, he's back in the Santa hat and the 90 seconds start again.
+He normally wears the Santa hat. A new look starts every 50 seconds, so he's almost always dressed up: about 42 seconds in the look, then about 8 going back to Santa and waiting for the next one. The Berserker gets 40 seconds longer, because the sword takes a while. If your windows cover him for more than 20 seconds, he's back in the Santa hat and the next look comes 8 seconds after you uncover him.
 
 | Look | What he wears |
 | --- | --- |
@@ -44,7 +44,7 @@ He normally wears the Santa hat. After 90 seconds on the desktop he changes into
 To change the rotation:
 
 ```sh
-ClawdWallpaper --every 5                 # 5 minutes between changes
+ClawdWallpaper --every 5                 # 5 minutes as Santa between looks
 ClawdWallpaper --cycle berserker,king    # only these looks
 ClawdWallpaper --look king               # always the king, no changes
 ```
