@@ -48,14 +48,16 @@ let pink = rgb(0xE85C9C), cyan = rgb(0x4FC3D9), steel = rgb(0x8E9299), steelLigh
 let armorRed = rgb(0xB3201C), armorRedDark = rgb(0x7E1512), armorGold = rgb(0xE0AE2E), armorGoldDark = rgb(0xA87F1C)
 let manhattanBlue = rgb(0x3A8DEB), manhattanLight = rgb(0x8FD2FF), spiderRed = rgb(0xC8202C), spiderBlue = rgb(0x1E4FB0)
 let plagueBlack = rgb(0x45444E), plagueDark = rgb(0x24232A), lacquer = rgb(0x7E1B1B), visor = rgb(0x1B2C45), leaf = rgb(0x5E9B3C)
+let batCowl = rgb(0x23252F), batSuit = rgb(0x575B68), batSuitDark = rgb(0x3E414C), batYellow = rgb(0xE8C33A), batYellowDark = rgb(0xB8921F)
+let batCape = rgb(0x17181F), batCapeLight = rgb(0x3A3D4C), batBlack = rgb(0x0B0B0F)
 
 // To add an item: add a case here, then draw it in drawHat, drawSprite or drawSuit.
-enum Hat: String, CaseIterable { case santa, wizard, crown, party, viking, helm, ironhelm, laurel, kabuto, bubble, beak, tricorn, none }
+enum Hat: String, CaseIterable { case santa, wizard, crown, party, viking, helm, ironhelm, laurel, kabuto, bubble, beak, tricorn, cowl, none }
 enum Gear: String, CaseIterable { case cape, robe, armor, scarf, sword, scepter, staff, axe }
 
 // A suit recolours the whole of him, where a hat or gear only sits on top.
 enum Suit: String, CaseIterable {
-    case none, ironman, manhattan, spider, toga, samurai, astronaut, plague, pirate
+    case none, ironman, manhattan, spider, toga, samurai, astronaut, plague, pirate, bat
     var skin: CGColor {
         switch self {
         case .ironman: return armorRed
@@ -63,6 +65,7 @@ enum Suit: String, CaseIterable {
         case .spider: return spiderRed
         case .astronaut: return white
         case .plague: return plagueBlack
+        case .bat: return batCowl
         default: return orange
         }
     }
@@ -71,6 +74,7 @@ enum Suit: String, CaseIterable {
         case .ironman: return armorGold
         case .spider: return spiderBlue
         case .astronaut: return whiteShade
+        case .bat: return batSuitDark
         case .manhattan, .plague: return skin
         default: return orange
         }
@@ -79,7 +83,7 @@ enum Suit: String, CaseIterable {
         switch self {
         case .ironman: return rgb(0xCFF6FF)
         case .manhattan: return rgb(0xEAF8FF)
-        case .spider: return white
+        case .spider, .bat: return white
         case .astronaut: return rgb(0xE8F4FF)
         case .plague: return rgb(0xE3B341)
         default: return eyeBlack
@@ -135,6 +139,11 @@ let looks = [
         "Crawling the web…", "Tingling at a race condition…", "Being friendly, and in your neighborhood…",
         "Catching a falling server…", "With great power comes great code review…",
     ], spark: rgb(0xE8ECF4)),
+    Look(name: "batman", hat: .cowl, gear: [], suit: .bat, arrival: "I'm Batman…", verbs: [
+        "Brooding in the background…", "Interrogating the stack trace…", "Checking the utility belt for a fix…",
+        "Working alone (with Alfred, Robin and the whole team)…", "Comparing tragic backstories with Guts…",
+        "Lurking in the server room…",
+    ], spark: batYellow),
     Look(name: "senator", hat: .laurel, gear: [], suit: .toga, arrival: "Taking the floor…", verbs: [
         "Filibustering your pull request…", "Crossing the Rubicon into main…", "Carthago delenda est (rm -rf)…",
         "Declaring a deploy freeze for the Ides…", "Et tu, linter?…", "Moving to censure Guts…",
@@ -174,16 +183,21 @@ struct Pose: Hashable {
     var status = ""
     var detail = ""
     var suit = Suit.none
+    var glide = false          // the bat cape spread out as wings
+    var crouch = false         // a superhero landing
+    var shadow = false         // all black but the eyes, against the moon
 }
 
 // y grows downward in sprite space; (9, 3.5) is the centre of his body.
 func drawSprite(_ c: CGContext, center: CGPoint, u: CGFloat, pose p: Pose) {
     c.setShouldAntialias(false)
+    let eyeCol = p.suit.eyes, sink: CGFloat = p.crouch ? 1.25 : 0
     func px(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat, _ col: CGColor) {
-        c.setFillColor(col)
-        c.fill(CGRect(x: center.x + (x - 9) * u, y: center.y - (y - 3.5 + p.bob + h) * u, width: w * u, height: h * u))
+        c.setFillColor(p.shadow && col != eyeCol ? batBlack : col)
+        c.fill(CGRect(x: center.x + (x - 9) * u, y: center.y - (y - 3.5 + sink + p.bob + h) * u, width: w * u, height: h * u))
     }
     let t = CGFloat(p.tail)
+    if p.suit == .bat { if p.glide { drawWings(px, t: t) } else { drawDrape(px, t: t, main: batCape, light: batCapeLight) } }
     if p.suit == .astronaut { px(0.5, 0.5, 2.75, 5, whiteShade); px(0.5, 0.5, 2.75, 0.5, steel) }   // air pack
     if p.gear.contains(.sword) {   // a tiny slab strapped to his back, far too big even so
         for i in 0..<15 {
@@ -196,13 +210,17 @@ func drawSprite(_ c: CGContext, center: CGPoint, u: CGFloat, pose p: Pose) {
     if p.gear.contains(.robe) { drawDrape(px, t: t, main: robe, light: robeLight, trim: white) }
     // Legs
     let lift: (CGFloat, CGFloat) = p.legs == 1 ? (0.75, 0) : p.legs == 2 ? (0, 0.75) : (0, 0)
-    let skin = p.suit.skin, legCol = p.suit.legs, eyeCol = p.suit.eyes
+    let skin = p.suit.skin, legCol = p.suit.legs
     if p.suit == .ironman {        // always on the thrusters
         let flame = 1 + abs(t) * 0.75
         for x in [CGFloat(4), 11] { px(x, 7.5, 3, flame, rgb(0x6FD3FF, 0.85)); px(x + 0.75, 7.5, 1.5, flame * 0.6, rgb(0xE8FBFF)) }
     }
-    px(4, 6, 1, 1.5 - lift.0, legCol); px(6, 6, 1, 1.5 - lift.1, legCol)
-    px(11, 6, 1, 1.5 - lift.0, legCol); px(13, 6, 1, 1.5 - lift.1, legCol)
+    if p.crouch {                  // knees bent all the way, so there's hardly any leg left
+        for x in [CGFloat(4), 6, 11, 13] { px(x, 6, 1, 0.25, legCol) }
+    } else {
+        px(4, 6, 1, 1.5 - lift.0, legCol); px(6, 6, 1, 1.5 - lift.1, legCol)
+        px(11, 6, 1, 1.5 - lift.0, legCol); px(13, 6, 1, 1.5 - lift.1, legCol)
+    }
     // Body and arms
     px(3, 0, 12, 6, skin)
     px(1, 3, 2, 1, skin)
@@ -241,6 +259,8 @@ func drawSprite(_ c: CGContext, center: CGPoint, u: CGFloat, pose p: Pose) {
                 px(bx + r.0 * cell, by + r.1 * cell, cell, cell, eyeCol)
             }
             px(bx + cell * 2, by + cell * 2, cell, cell, eyeCol)
+        case .normal where p.suit == .bat:   // narrow, and scowling
+            px(x, y + 0.5, 1.5, 1, eyeCol); px(left ? x + 1 : x, y + 0.5, 0.5, 0.25, skin)
         case .normal: px(x, y, 1.5, 2, eyeCol)
         }
     }
@@ -339,6 +359,10 @@ func drawHat(_ kind: Hat, t: CGFloat, crooked: Bool, _ hat: Paint) {
         hat(3, -1, 12, 1, plagueDark); hat(4.5, -2.5, 9, 1.5, plagueDark); hat(6.5, -3.5, 5, 1, plagueDark)
         hat(3, -1, 12, 0.25, gold); hat(8, -2.5, 2, 1.25, white); hat(8.25, -2.25, 0.5, 0.5, eyeBlack); hat(9.25, -2.25, 0.5, 0.5, eyeBlack)
         hat(3, 0.75, 12, 0.25, eyeBlack); hat(4.5, 1, 2.75, 2.5, eyeBlack)   // and the eyepatch, which the hat insists on
+    case .cowl:   // the ears, and not much else: the rest of him is already the cowl
+        hat(3, -0.5, 12, 0.5, batCowl); hat(3, -0.5, 12, 0.25, batCapeLight)
+        hat(4, -2.5, 0.75, 2, batCowl); hat(4.75, -1.5, 0.75, 1, batCowl)
+        hat(13.25, -2.5, 0.75, 2, batCowl); hat(12.5, -1.5, 0.75, 1, batCowl)
     case .none:
         break
     }
@@ -381,6 +405,15 @@ func drawSuit(_ suit: Suit, t: CGFloat, wave: Int, _ px: Paint) {
     case .plague:
         px(3, 3.75, 12, 2.25, plagueDark); px(8.75, 3.75, 0.5, 2.25, rgb(0x5C4A32))
         px(17, -3, 0.75, 11, wood); px(16.5, -3.25, 1.75, 0.75, gold)   // the cane, for poking at the dying
+    case .bat:
+        px(3, 3.5, 12, 2.5, batSuit); px(3, 3.5, 12, 0.25, batSuitDark)
+        // The emblem: a yellow oval and a very small bat
+        px(7.75, 3.75, 2.5, 0.25, batYellow); px(7.25, 4, 3.5, 0.75, batYellow); px(7.75, 4.75, 2.5, 0.25, batYellow)
+        px(7.5, 4.25, 3, 0.25, batBlack); px(8.75, 4, 0.5, 0.75, batBlack); px(7.5, 4.5, 0.5, 0.25, batBlack); px(10, 4.5, 0.5, 0.25, batBlack)
+        // The utility belt, with a fix for everything in it
+        px(3, 5.25, 12, 0.5, batYellow)
+        for x in [4.25, 5.75, 11.5, 13] as [CGFloat] { px(x, 5.25, 0.75, 0.5, batYellowDark) }
+        px(8.5, 5.25, 1, 0.5, rgb(0xFFF0A0))
     case .pirate:
         px(3, 3.75, 12, 2.25, rgb(0x6E1F2A)); px(7.5, 3.75, 3, 2.25, white); px(3, 5.25, 12, 0.5, brown); px(8.25, 5.25, 1.5, 0.5, gold)
         px(16.5, -3, 1, 5, steelLight); px(17.25, -3.5, 0.75, 4.5, steel); px(15.5, 2, 3, 0.75, gold); px(16.5, 2.75, 1, 1, brown)
@@ -402,6 +435,41 @@ func drawDrape(_ px: Paint, t: CGFloat, main: CGColor, light: CGColor, trim: CGC
         px(-3.25 + sway * 2, 7.75, 0.5, 0.5, eyeBlack); px(1.25 + sway, 7.75, 0.5, 0.5, eyeBlack)
     }
 }
+
+// The bat cape held out wide, scalloped along the bottom.
+func drawWings(_ px: Paint, t: CGFloat) {
+    let tip = t * 0.25
+    for (y, x, w) in [(0.5, 0, 3), (1.5, -3, 6), (2.5, -6, 9), (3.5, -8, 11)] as [(CGFloat, CGFloat, CGFloat)] {
+        let dy = x < -5 ? tip : 0
+        px(x, y + dy, w, 1, batCape); px(18 - x - w, y + dy, w, 1, batCape)
+    }
+    for x in [-8, -5, -2] as [CGFloat] { px(x, 4.5 + tip, 2, 0.75, batCape); px(16 - x, 4.5 + tip, 2, 0.75, batCape) }
+    px(-8, 3.5 + tip, 11, 0.25, batCapeLight); px(15, 3.5 + tip, 11, 0.25, batCapeLight)
+    px(-6, 2.5 + tip, 3, 0.25, batCapeLight); px(21, 2.5 + tip, 3, 0.25, batCapeLight)
+}
+
+// Pixel art from rows of text, "X" filled. Rows run top to bottom.
+func pixelImage(_ rows: [String], cell: Int, color: CGColor) -> CGImage {
+    let w = rows.map(\.count).max() ?? 1, h = rows.count
+    let c = context(w * cell, h * cell)
+    c.setShouldAntialias(false); c.setFillColor(color)
+    for (r, row) in rows.enumerated() {
+        for (i, ch) in row.enumerated() where ch == "X" { c.fill(CGRect(x: i * cell, y: (h - 1 - r) * cell, width: cell, height: cell)) }
+    }
+    return c.makeImage()!
+}
+let batLogo = [
+    "XX......X.X......XX",
+    "XXX.....XXX.....XXX",
+    "XXXXX..XXXXX..XXXXX",
+    "XXXXXXXXXXXXXXXXXXX",
+    "XXXXXXXXXXXXXXXXXXX",
+    ".XXXXXXXXXXXXXXXXX.",
+    "..XX..XXXXXXX..XX..",
+    "........XXX........",
+]
+let flyingBat = [["X.....X", "XX.X.XX", ".XXXXX.", "..X.X.."], ["...X...", ".XXXXX.", "XX.X.XX", "X.....X"]]
+let batarangArt = [".X...X.", "XXXXXXX", "..X.X.."]
 
 // A hat on its own, for when it's flying through the air.
 func hatImage(_ kind: Hat) -> CGImage {
@@ -513,7 +581,7 @@ let spinner = ["·", "✢", "✳", "✶", "✻", "✽", "✻", "✶", "✳", "�
 func noAnim(_ l: CALayer) { l.actions = ["position": NSNull(), "contents": NSNull(), "bounds": NSNull(), "transform": NSNull(), "opacity": NSNull(), "hidden": NSNull()] }
 
 struct Spark { let layer: CALayer; var x: CGFloat; var y: CGFloat; var vx: CGFloat; var vy: CGFloat; let dies: Double }
-enum Scene { case sword, eclipse, change, summon }
+enum Scene { case sword, eclipse, change, summon, bat }
 
 // Is the desktop the thing under this point, rather than a window? Clicks reach us wherever they
 // land. Only ordinary windows count: transparent overlays above them (a notch app, a dictation
@@ -536,6 +604,7 @@ final class Clawd {
     let root: CALayer
     let glow = CALayer(), sprite = CALayer(), textLayer = CALayer(), spinLayer = CALayer()
     let home: CGPoint              // in window coordinates
+    let baseFrame: NSRect          // the window's usual frame; the Batman scene stretches it up to the top of the screen
     let center: CGPoint, moon: CGPoint, guts: CGPoint   // in screen coordinates
     let moonRadius: CGFloat
     let u: CGFloat, scale: CGFloat, homeToEdge: CGFloat
@@ -584,6 +653,15 @@ final class Clawd {
     // The blood moon, from clicking on the moon.
     var bloodWindow: NSWindow?, bloodLayer: CALayer?, bloodStart = 0.0, bloodFadeStart: Double? = nil
     var desktopUnder: (CGPoint) -> Bool = desktopIsUnder
+    // Batman: the signal on the moon, the swarm he turns into, the grapple line and the batarang.
+    let batTimes = (signal: 2.0, swarm: 2.6, reveal: 1.4, aim: 0.5, zip: 1.0, hang: 3.6, glide: 2.4, land: 1.0, batarang: 1.8)
+    var batTotal: Double { let T = batTimes; return T.signal + T.swarm + T.reveal + T.aim + T.zip + T.hang + T.glide + T.land + T.batarang }
+    var batStage = 0
+    var swarm: [(layer: CALayer, a: CGFloat, r: CGFloat, w: CGFloat, ph: Double)] = []
+    var ropeLayer: CALayer?, batarangLayer: CALayer?
+    var signalWindow: NSWindow?, signalLayer: CALayer?
+    var hideSprite = false, hideGlow = false
+    lazy var batFrames = flyingBat.map { pixelImage($0, cell: Int(spritePx), color: rgb(0x6A6E7C)) }
 
     init(screen s: NSScreen, hat: Hat?, gear: [Gear]?, suit: Suit? = nil, show: Bool = true, cycle: [Look] = looks, every minutes: Double = defaultEveryMinutes) {
         screen = s
@@ -606,6 +684,7 @@ final class Clawd {
         // Reaches from the screen edge to past where he stops with the sword; only as tall as he needs.
         let frame = NSRect(x: f.minX, y: (center.y - 30 * u).rounded(), width: (center.x - f.minX + 84 * u).rounded(), height: (60 * u).rounded())
         home = CGPoint(x: center.x - frame.minX, y: center.y - frame.minY)
+        baseFrame = frame
         window = NSWindow(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
         window.isOpaque = false
         window.backgroundColor = .clear
@@ -650,16 +729,17 @@ final class Clawd {
     }
 
     func close() {
-        endEclipse(); endBlood(); window.orderOut(nil)
+        endEclipse(); endBlood(); endBat(); window.orderOut(nil)
     }
 
     var visible: Bool {
-        [window, moonWindow, bloodWindow].contains { $0?.occlusionState.contains(.visible) ?? false }
+        [window, moonWindow, bloodWindow, signalWindow].contains { $0?.occlusionState.contains(.visible) ?? false }
     }
 
     var desiredInterval: TimeInterval {
         let t = lastT
         if sleeping { return 1 }
+        if scene == .bat { return 1.0 / 15 }   // he's flying about, so a little smoother
         if scene != nil || bloodWindow != nil || pulling || t < dizzyUntil || t - hopStart < 0.6 || t < waveUntil || t < tapUntil || t - lastMoveT < 1.5 { return 1.0 / 10 }
         if tired || ProcessInfo.processInfo.isLowPowerModeEnabled { return 0.5 }
         return 1.0 / 3
@@ -689,7 +769,7 @@ final class Clawd {
         guard cycling else { return false }
         if bloodWindow == nil { startBlood(t) } else { bloodFadeStart = nil }
         if scene == .sword || scene == .summon { return true }
-        endEclipse()
+        endEclipse(); endBat()
         flyHat?.removeFromSuperlayer(); flyHat = nil; dropHat?.removeFromSuperlayer(); dropHat = nil; swapStage = 0
         sleeping = false; sleepForced = false; lastMoveT = t
         pulling = false; spin = 0; lastAngle = nil; dizzyUntil = 0
@@ -823,6 +903,8 @@ final class Clawd {
 
         // Scenes take over the body.
         var movedByScene = false
+        hideSprite = false; hideGlow = false
+        if scene == .bat { movedByScene = updateBat(t, &p, &offset, &status, &detail, &target, &shake) }
         if scene == .sword { movedByScene = updateSword(t, &p, &offset, &status, &detail, &target, &shake, &fallen) }
         if scene == .eclipse { updateEclipse(t, &p, &status, &detail, &target, &shake) }
         if scene == .change { updateChange(t, &p, &status, &detail, &target) }
@@ -916,6 +998,8 @@ final class Clawd {
         let sy = home.y + (pos.y + (fallen ? -2 : bob) + hop) * u
         let newPos = CGPoint(x: (sx * 2).rounded() / 2, y: (sy * 2).rounded() / 2)
         if sprite.position != newPos { sprite.position = newPos }
+        if sprite.isHidden != hideSprite { sprite.isHidden = hideSprite }
+        if glow.isHidden != (hideSprite || hideGlow) { glow.isHidden = hideSprite || hideGlow }
         let glowPos = CGPoint(x: ((home.x + pos.x * u) * 2).rounded() / 2, y: ((home.y + pos.y * u) * 2).rounded() / 2)
         if glow.position != glowPos { glow.position = glowPos }
         let tf = fallen ? CGAffineTransform(rotationAngle: .pi / 2) : .identity
@@ -974,6 +1058,9 @@ final class Clawd {
         if look.name == looks[0].name {
             startSword(t, target: look)
             nextCycle = t + holdSeconds + 40
+        } else if look.suit == .bat {
+            startBat(look, t)
+            nextCycle = t + holdSeconds + batTotal
         } else {
             startChange(look, t)
             nextCycle = t + holdSeconds
@@ -1192,6 +1279,232 @@ final class Clawd {
         }
         scene = nil; swapStage = 0; verbStart = t
         off = .zero
+        return true
+    }
+
+    // MARK: Batman
+
+    func startBat(_ look: Look, _ t: Double) {
+        scene = .bat; sceneStart = t; changeTarget = look; batStage = 0
+        // Room to fly: up to the top of the screen, for the grapple and the moon.
+        window.setFrame(NSRect(x: baseFrame.minX, y: baseFrame.minY, width: baseFrame.width,
+                               height: max(baseFrame.height, screen.frame.maxY - baseFrame.minY)), display: false)
+        startSignal(t)
+    }
+
+    // Takes everything down. Doesn't dress him: the scene does that as it goes, and the moon can cut it short.
+    func endBat() {
+        swarm.forEach { $0.layer.removeFromSuperlayer() }; swarm = []
+        ropeLayer?.removeFromSuperlayer(); ropeLayer = nil
+        batarangLayer?.removeFromSuperlayer(); batarangLayer = nil
+        signalWindow?.orderOut(nil); signalWindow = nil; signalLayer = nil
+        if window.frame != baseFrame { window.setFrame(baseFrame, display: false) }
+        hideSprite = false; hideGlow = false
+        sprite.isHidden = false; glow.isHidden = false
+    }
+
+    // In sprite pixels from home: hanging right in front of the moon.
+    var hangPos: CGPoint {
+        let top = (screen.frame.maxY - center.y) / u - 9   // clear of the menu bar
+        return CGPoint(x: (moon.x - center.x) / u, y: min(top, (moon.y - moonRadius * 0.1 - center.y) / u))
+    }
+    // Window coordinates: his raised hand, and where the hook catches, just under the menu bar.
+    func handPoint(_ off: CGPoint) -> CGPoint { CGPoint(x: home.x + (off.x + 7.5) * u, y: home.y + (off.y + 2) * u) }
+    var anchorPoint: CGPoint { CGPoint(x: home.x + (hangPos.x + 7.5) * u, y: screen.frame.maxY - baseFrame.minY + 2 * u) }
+    func toScreen(_ p: CGPoint) -> CGPoint { CGPoint(x: p.x + baseFrame.minX, y: p.y + baseFrame.minY) }
+
+    func setRope(_ a: CGPoint, _ b: CGPoint) {
+        if ropeLayer == nil {
+            let l = CALayer(); noAnim(l)
+            l.backgroundColor = rgb(0xB9BDC6)
+            l.anchorPoint = CGPoint(x: 0, y: 0.5)
+            root.insertSublayer(l, below: sprite)
+            ropeLayer = l
+        }
+        let dx = b.x - a.x, dy = b.y - a.y
+        ropeLayer?.bounds = CGRect(x: 0, y: 0, width: hypot(dx, dy), height: max(1, (0.35 * u).rounded()))
+        ropeLayer?.position = a
+        ropeLayer?.setAffineTransform(CGAffineTransform(rotationAngle: atan2(dy, dx)))
+    }
+
+    func makeSwarm() {
+        let n = 22
+        for i in 0..<n {
+            let l = CALayer(); noAnim(l)
+            l.magnificationFilter = .nearest
+            l.contents = batFrames[i % 2]
+            l.bounds = CGRect(x: 0, y: 0, width: 7 * 0.6 * u, height: 4 * 0.6 * u)
+            root.addSublayer(l)
+            swarm.append((l, CGFloat(i) / CGFloat(n) * 2 * .pi + .random(in: -0.2...0.2), .random(in: 0.7...1.3), .random(in: 3.2...5.2), .random(in: 0...1)))
+        }
+    }
+
+    // They pour in from all round, whirl about him until he's gone, then stream off towards the moon.
+    func updateSwarm(_ s: Double) {
+        let away = hangPos
+        for b in swarm {
+            var radius: CGFloat, cx: CGFloat = 0, cy: CGFloat = 2
+            if s < 0.9 { let k = CGFloat(s / 0.9); radius = (44 * (1 - k) + 6 * k) * b.r }
+            else if s < 1.7 { radius = 6 * b.r + CGFloat(sin(s * 7 + b.ph * 6)) * 0.75 }
+            else { let k = CGFloat((s - 1.7) / 0.9); radius = 6 * b.r + k * 6; cx = away.x * k * k * 1.6; cy = 2 + away.y * k * k * 1.6 }
+            let a = b.a + b.w * CGFloat(s)
+            let x = cx + cos(a) * radius, y = cy + sin(a) * radius * 0.55
+            b.layer.position = CGPoint(x: home.x + (x * 2).rounded() / 2 * u, y: home.y + (y * 2).rounded() / 2 * u)
+            let f = Int((s + b.ph) * 12) % 2
+            if b.layer.contents as! CGImage !== batFrames[f] { b.layer.contents = batFrames[f] }
+        }
+    }
+
+    func startSignal(_ t: Double) {
+        let r = moonRadius, side = r * 4
+        let frame = NSRect(x: moon.x - side / 2, y: moon.y - side / 2, width: side, height: side)
+        let w = NSWindow(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
+        w.isOpaque = false; w.backgroundColor = .clear; w.hasShadow = false; w.ignoresMouseEvents = true
+        w.level = window.level; w.collectionBehavior = window.collectionBehavior
+        w.isReleasedWhenClosed = false
+        let v = NSView(frame: NSRect(origin: .zero, size: frame.size)); v.wantsLayer = true
+        w.contentView = v
+        // Floodlight yellow over the moon's disc, and the bat in the middle of it.
+        let px = 384, c = context(px, px), m = CGFloat(px) / 2, edge: CGFloat = 0.5
+        let g = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB),
+                           colors: [rgb(0xFFEE9A, 0.62), rgb(0xFFE47A, 0.58), rgb(0xF5D060, 0.3), rgb(0xE0B840, 0.07), rgb(0xE0B840, 0)] as CFArray,
+                           locations: [0, edge - 0.01, edge + 0.03, edge + 0.25, 1])!
+        c.drawRadialGradient(g, startCenter: CGPoint(x: m, y: m), startRadius: 0, endCenter: CGPoint(x: m, y: m), endRadius: m, options: [])
+        let cell = 7, logo = pixelImage(batLogo, cell: cell, color: rgb(0x0E0D0B, 0.92))
+        c.interpolationQuality = .none
+        c.draw(logo, in: CGRect(x: m - CGFloat(logo.width) / 2, y: m - CGFloat(logo.height) / 2, width: CGFloat(logo.width), height: CGFloat(logo.height)))
+        let l = CALayer(); noAnim(l)
+        l.contents = c.makeImage()
+        l.frame = CGRect(x: 0, y: 0, width: side, height: side)
+        l.opacity = 0
+        v.layer!.addSublayer(l)
+        if randomEvents { w.orderFront(nil) }
+        signalWindow = w; signalLayer = l
+    }
+
+    // Returns true: the scene steers him the whole way.
+    func updateBat(_ t: Double, _ p: inout Pose, _ off: inout CGPoint, _ status: inout String?, _ detail: inout String?,
+                   _ target: inout CGPoint, _ shake: inout CGFloat) -> Bool {
+        let T = batTimes, hang = hangPos, anchor = anchorPoint
+        var s = t - sceneStart
+        detail = ""; off = .zero
+        func dressed() {
+            if batStage < 2 { dress(changeTarget); batStage = 2 }
+            p.hat = currentHat; p.gear = currentGear; p.suit = currentSuit; p.crooked = false
+        }
+        func smooth(_ k: Double) -> CGFloat { let k = CGFloat(min(1, max(0, k))); return k * k * (3 - 2 * k) }
+        if s < T.signal {                       // a light in the sky
+            signalLayer?.opacity = Float(min(1, s / 0.6))
+            target = moon
+            if s > 0.5 { p.eyes = .wide; shake = Int(t * 12) % 2 == 0 ? 0.25 : -0.25 }
+            status = s < 0.5 ? "Checking the sky…" : "Seeing a signal…"
+            return true
+        }
+        s -= T.signal
+        signalLayer?.opacity = Float(0.9 + 0.1 * sin(t * 3))
+        if s < T.swarm {                        // and he becomes the night, more or less
+            if batStage < 1 { makeSwarm(); batStage = 1 }
+            updateSwarm(s)
+            target = moon; p.eyes = .wide
+            if s > 0.9 && s < 1.7 { hideSprite = true }
+            if s > 1.3 { dressed() }
+            status = "Becoming the night…"
+            return true
+        }
+        s -= T.swarm
+        if !swarm.isEmpty { swarm.forEach { $0.layer.removeFromSuperlayer() }; swarm = [] }
+        dressed()
+        if s < T.reveal {                       // staring straight out of the screen at you
+            target = center
+            status = changeTarget.arrival
+            return true
+        }
+        s -= T.reveal
+        if s < T.aim {                          // the grapple goes up and catches on the menu bar
+            p.wave = 1
+            let hand = handPoint(.zero), k = CGFloat(min(1, s / 0.35))
+            setRope(hand, CGPoint(x: hand.x + (anchor.x - hand.x) * k, y: hand.y + (anchor.y - hand.y) * k))
+            target = toScreen(anchor)
+            status = "Grappling the menu bar…"
+            return true
+        }
+        s -= T.aim
+        if s < T.zip {                          // and up he goes
+            let k = smooth(s / T.zip)
+            off = CGPoint(x: hang.x * k, y: hang.y * k)
+            p.wave = 1; setRope(handPoint(off), anchor)
+            signalLayer?.opacity = Float(max(0, 1 - s / T.zip))
+            target = toScreen(anchor)
+            status = "Grappling the menu bar…"
+            return true
+        }
+        s -= T.zip
+        if signalWindow != nil { signalWindow?.orderOut(nil); signalWindow = nil; signalLayer = nil }
+        if s < T.hang {                         // a silhouette on the moon, the way it's meant to look
+            off = CGPoint(x: hang.x + CGFloat(sin(s * 1.8)) * 0.5, y: hang.y)
+            p.wave = 1; p.shadow = true; hideGlow = true
+            setRope(handPoint(off), anchor)
+            target = s < 1.8 ? CGPoint(x: center.x - 300, y: center.y - 600) : guts
+            status = s < 1.8 ? "Brooding against the moon…" : "Out-brooding Guts…"
+            return true
+        }
+        s -= T.hang
+        if ropeLayer != nil { ropeLayer?.removeFromSuperlayer(); ropeLayer = nil }
+        if s < T.glide {                        // lets go, spreads the cape, and swoops home
+            let k = smooth(s / T.glide), j = 1 - k
+            let ctrl = CGPoint(x: hang.x + 28, y: hang.y * 0.4)
+            func at(_ k: CGFloat, _ j: CGFloat) -> CGPoint {
+                CGPoint(x: j * j * hang.x + 2 * j * k * ctrl.x, y: j * j * hang.y + 2 * j * k * ctrl.y)
+            }
+            off = at(k, j)
+            let ahead = at(min(1, k + 0.05), 1 - min(1, k + 0.05))
+            target = CGPoint(x: center.x + (off.x + (ahead.x - off.x) * 40) * u, y: center.y + (off.y + (ahead.y - off.y) * 40) * u)
+            p.glide = true; p.tail = Int(t * 3) % 2 == 0 ? 1 : -1
+            status = "Gliding (dramatically)…"
+            return true
+        }
+        s -= T.glide
+        if batStage < 3 { batStage = 3; burst(steel, count: 12, t: t) }   // the dust
+        if s < T.land {                         // a superhero landing, without a sound
+            p.crouch = s < 0.7
+            if s < 0.25 { shake = Int(t * 15) % 2 == 0 ? 0.5 : -0.5 }
+            target = center
+            status = "Landing without a sound…"
+            return true
+        }
+        s -= T.land
+        let flight = T.batarang - 0.5
+        if s < T.batarang {                     // out and back, spinning all the way
+            if batStage < 4 {
+                batStage = 4
+                let l = CALayer(); noAnim(l)
+                l.magnificationFilter = .nearest
+                l.contents = pixelImage(batarangArt, cell: Int(spritePx), color: rgb(0xA9AEB8))
+                l.bounds = CGRect(x: 0, y: 0, width: 7 * 0.6 * u, height: 3 * 0.6 * u)
+                root.addSublayer(l)
+                batarangLayer = l
+            }
+            if s < flight {
+                let k = CGFloat(s / flight)
+                let x = 7.5 + 34 * sin(.pi * k), y = 1.5 + 7 * sin(2 * .pi * k)
+                let pt = CGPoint(x: home.x + (x * 2).rounded() / 2 * u, y: home.y + (y * 2).rounded() / 2 * u)
+                batarangLayer?.position = pt
+                batarangLayer?.setAffineTransform(CGAffineTransform(rotationAngle: k * 12 * .pi))
+                p.wave = k < 0.12 ? 1 : 0
+                target = toScreen(pt)
+                status = "Throwing a batarang…"
+                return true
+            }
+            if batarangLayer != nil, batStage < 5 {
+                batStage = 5
+                batarangLayer?.removeFromSuperlayer(); batarangLayer = nil
+                burst(batYellow, count: 6, t: t); hopStart = t; hopHeight = 1.5
+            }
+            p.wave = 2; target = center
+            status = "Caught it. Obviously…"
+            return true
+        }
+        endBat(); scene = nil; batStage = 0; verbStart = t
         return true
     }
 
@@ -1481,8 +1794,12 @@ final class Sim {
         let T = c.swordTimes
         return T.leave + T.drag + T.pant + T.lift + T.fall + T.up + T.stare + T.surge + T.swap + T.power + T.sheathe + T.back
     }
+    // Long enough for a look's arrival scene to finish.
+    func sceneLength(_ look: Look) -> Double { look.name == "berserker" ? swordTotal + 2 : look.suit == .bat ? c.batTotal + 2 : 6 }
     func clean() -> Bool {
         c.scene == nil && c.swordLayer == nil && c.moonWindow == nil && c.bloodWindow == nil && c.flyHat == nil && c.dropHat == nil
+            && c.swarm.isEmpty && c.ropeLayer == nil && c.batarangLayer == nil && c.signalWindow == nil
+            && c.window.frame == c.baseFrame && !c.sprite.isHidden && !c.glow.isHidden
             && c.root.sublayers?.count == 4 + c.sparks.count
             && c.sprite.affineTransform() == .identity && abs(c.pos.x) < 0.5 && abs(c.pos.y) < 0.5
     }
@@ -1619,6 +1936,62 @@ func selftest() -> Bool {
         runs += 1
     } }
 
+    // Batman: the signal, the swarm, the grapple, the moon, the glide, the landing and the batarang.
+    let batman = looks.first { $0.suit == .bat }!
+    for hat in Hat.allCases {
+        let name = "batman from \(hat.rawValue)"
+        let sim = Sim(hat: hat, gear: [.cape], screen: screen), c = sim.c
+        c.startLook(batman, sim.t)
+        var signal = false, swarmed = false, vanished = false, roped = false, onMoon = false, silhouette = false
+        var glided = false, crouched = false, thrown = false, stretched = false, clipped = false, order: [String] = []
+        sim.run(c.batTotal + 2) {
+            if (c.signalLayer?.opacity ?? 0) > 0.9 { signal = true }
+            if c.swarm.count > 10 { swarmed = true }
+            if c.sprite.isHidden { vanished = true }
+            if c.ropeLayer != nil { roped = true }
+            if hypot(c.pos.x - c.hangPos.x, c.pos.y - c.hangPos.y) < 1 { onMoon = true }
+            if c.pose.shadow { silhouette = true }
+            if c.pose.glide { glided = true }
+            if c.pose.crouch { crouched = true }
+            if c.batarangLayer != nil { thrown = true }
+            if c.window.frame.height > c.baseFrame.height + 1 { stretched = true }
+            if c.home.x + (c.pos.x + 20) * c.u > c.window.frame.width || c.home.y + (c.pos.y + 7) * c.u > c.window.frame.height { clipped = true }
+            if let l = c.batarangLayer, l.position.x + l.bounds.width > c.window.frame.width { clipped = true }
+            let line = String(c.drawnText.split(separator: "|").first ?? "")
+            if order.last != line { order.append(line) }
+        }
+        check(signal, "\(name): no bat-signal")
+        check(swarmed && vanished, "\(name): never turned into bats")
+        check(roped && onMoon && silhouette, "\(name): never got up to the moon")
+        check(stretched, "\(name): window never stretched for the flight")
+        check(!clipped, "\(name): flew out of his window")
+        check(glided && crouched, "\(name): never glided down and landed")
+        check(thrown, "\(name): never threw the batarang")
+        check(sim.clean(), "\(name): not clean afterwards")
+        check(c.currentHat == .cowl && c.currentSuit == .bat && c.currentGear.isEmpty, "\(name): wrong outfit: \(c.currentHat) \(c.currentGear) \(c.currentSuit)")
+        for want in ["Seeing a signal…", "Becoming the night…", "I'm Batman…", "Grappling the menu bar…", "Out-brooding Guts…", "Gliding (dramatically)…", "Throwing a batarang…", "Caught it. Obviously…"] {
+            check(order.contains(want), "\(name): missing status \(want)")
+        }
+        // Covered part way through: dressed and tidy, whenever it was.
+        for at in [1.0, 3.0, 4.0, 6.0, 7.5, 10.0, 13.0, 14.5, 16.0] {
+            let s2 = Sim(hat: hat, gear: [], screen: screen), c2 = s2.c
+            c2.startLook(batman, s2.t); s2.run(at); s2.t += 500; s2.run(2)
+            check(s2.clean() && c2.currentHat == .cowl && c2.currentSuit == .bat, "\(name): paused at \(at)s: \(c2.currentHat) \(c2.currentSuit) scene \(String(describing: c2.scene))")
+        }
+        // The moon cuts it short at any point, and takes everything down on the way to the sword.
+        for at in [1.0, 3.5, 8.0, 11.0, 15.0] {
+            let s3 = Sim(hat: nil, gear: nil, screen: screen), c3 = s3.c
+            c3.startLook(batman, s3.t); s3.run(at)
+            check(c3.handleClick(at: CGPoint(x: c3.moon.x, y: c3.moon.y)), "\(name): moon ignored at \(at)s")
+            check(c3.swarm.isEmpty && c3.ropeLayer == nil && c3.batarangLayer == nil && c3.signalWindow == nil && c3.window.frame == c3.baseFrame && !c3.sprite.isHidden,
+                  "\(name): moon at \(at)s left Batman things behind")
+            s3.run(2); s3.run(s3.swordTotal + 4)   // the sword's length is only known once he's gone for it
+            check(s3.clean() && c3.currentHat == .helm, "\(name): moon at \(at)s: no Berserker afterwards: \(c3.currentHat)")
+            if hat != .santa { break }
+        }
+        runs += 1
+    }
+
     // The rotation
     do {
         let sim = Sim(hat: nil, gear: nil, screen: screen), c = sim.c
@@ -1629,7 +2002,7 @@ func selftest() -> Bool {
             sim.run(max(0, c.nextCycle - sim.t) + 1)
             check(c.wearing?.name == look.name, "rotation \(i): expected \(look.name), got \(c.wearing?.name ?? "nothing")")
             check(c.scene != nil, "rotation \(i): \(look.name) started without a scene")
-            sim.run(look.name == "berserker" ? sim.swordTotal + 2 : 6)
+            sim.run(sim.sceneLength(look))
             check(sim.clean() && c.currentHat == look.hat && Set(c.currentGear) == Set(look.gear) && c.currentSuit == look.suit, "rotation \(i): \(look.name) not on: \(c.currentHat) \(c.currentGear) \(c.currentSuit)")
             check(look.verbs.contains { c.drawnText.hasPrefix($0) }, "rotation \(i): wrong status: \(c.drawnText)")
             let left = c.nextCycle - sim.t
@@ -1714,7 +2087,8 @@ func selftest() -> Bool {
         let first = Array(order.prefix(looks.count))
         check(first == looks.map(\.name), "rotation order: \(first)")
         let gaps = zip(swords.dropFirst(), swords).map { $0 - $1 }
-        check(gaps.count >= 2 && gaps.allSatisfy { abs($0 - (Double(looks.count) * 50 + 40)) < 2 }, "sword gaps: \(gaps)")
+        let batExtra = looks.filter { $0.suit == .bat }.count > 0 ? r.batTotal : 0
+        check(gaps.count >= 2 && gaps.allSatisfy { abs($0 - (Double(looks.count) * 50 + 40 + batExtra)) < 2 }, "sword gaps: \(gaps)")
     }
     // Rebuilding keeps his place in the rotation, and nothing rebuilds unless the screens changed.
     do {
@@ -1774,7 +2148,7 @@ func selftest() -> Bool {
         mid.c.startLook(looks[1], mid.t); mid.run(0.8); mid.c.handleClick(at: onMoon(mid.c)); fullChange(mid, "mid-change")
         for look in looks {   // and out of every other look, including from the armour itself
             let l = Sim(hat: nil, gear: nil, screen: screen)
-            l.c.startLook(look, l.t); l.run(look.name == "berserker" ? l.swordTotal + 2 : 6)
+            l.c.startLook(look, l.t); l.run(l.sceneLength(look))
             l.c.handleClick(at: onMoon(l.c)); fullChange(l, "from \(look.name)")
         }
         // Mid-sword: glows, but doesn't restart him.
@@ -1808,7 +2182,7 @@ func renderFrame(_ c: Clawd, wall: CGImage?, screen f: CGRect) -> CGImage {
         x.draw(w, in: CGRect(x: (f.width - dw) / 2, y: (f.height - dh) / 2, width: dw, height: dh))
     }
     x.saveGState(); x.translateBy(x: c.window.frame.minX - f.minX, y: c.window.frame.minY - f.minY); c.root.render(in: x); x.restoreGState()
-    for m in [c.bloodWindow, c.moonWindow].compactMap({ $0 }) {
+    for m in [c.bloodWindow, c.moonWindow, c.signalWindow].compactMap({ $0 }) {
         guard let l = m.contentView?.layer else { continue }
         x.saveGState(); x.translateBy(x: m.frame.minX - f.minX, y: m.frame.minY - f.minY); l.render(in: x); x.restoreGState()
     }
@@ -1868,6 +2242,21 @@ func renderFrames(dir: String, wallpaper: String?) {
     }()
     probe.c.swordLayer?.removeFromSuperlayer()
     shoot("sword", hat: .santa, gear: [], times: swordTimes, cols: 4, setup: { $0.c.startLook(looks[0], $0.t) })
+    let B = probe.c.batTimes
+    var b = 0.0
+    let batTimes: [Double] = {
+        var r: [Double] = [1.2]; b += B.signal
+        r += [b + 0.4, b + 1.2, b + 2.2]; b += B.swarm
+        r += [b + 0.8]; b += B.reveal
+        r += [b + 0.4]; b += B.aim
+        r += [b + 0.5]; b += B.zip
+        r += [b + 2.5]; b += B.hang
+        r += [b + 0.6, b + 1.4, b + 2.1]; b += B.glide
+        r += [b + 0.3]; b += B.land
+        r += [b + 0.4, b + 0.8, b + 1.6, b + B.batarang + 1]
+        return r
+    }()
+    shoot("batman", hat: .santa, gear: [], times: batTimes, cols: 4, setup: { $0.c.startLook(looks.first { $0.suit == .bat }!, $0.t) })
     shoot("moon", hat: nil, gear: nil, times: [0.1, 0.5, 1.2, 2.5, 5, 40, 42, 45, 49], setup: { $0.c.handleClick(at: $0.c.moon) })
     shoot("eclipse", times: [5, 11, 15, 17, 20, 25, 28, 31, 35, 39], setup: { $0.c.startEclipse($0.t) })
     let closeUp = CGRect(x: 0, y: 0, width: 760, height: 760)
@@ -1889,7 +2278,7 @@ func renderFrames(dir: String, wallpaper: String?) {
         let a = CGFloat(s.t) * 2 * .pi * 1.2
         s.c.fakeMouse = CGPoint(x: s.c.center.x + cos(a) * 20 * s.c.u, y: s.c.center.y + sin(a) * 20 * s.c.u)
     })
-    for look in looks.dropFirst() {
+    for look in looks.dropFirst() where look.suit != .bat {
         close("look-" + look.name, times: [0.3, 0.8, 1.0, 1.4, 1.75, 2.0, 2.6, 3.6], setup: { $0.c.startLook(look, $0.t) })
     }
     close("back-to-santa", hat: nil, gear: nil, times: [0.3, 0.8, 1.0, 1.4, 1.75, 2.0, 2.6, 3.6], setup: { s in

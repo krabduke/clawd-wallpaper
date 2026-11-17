@@ -1,6 +1,6 @@
 # clawd-wallpaper
 
-A tiny pixel Claude Code mascot in a Santa hat who lives on your Mac desktop, under your icons and windows. Leave him on screen for a few seconds and he changes: he hauls in a giant sword and ends up in Berserker armour, and later on he's Iron Man, Doctor Manhattan, a Roman senator, and more. Click the moon and the Berserker change starts right away. It was made as a funny contrast to a very serious Berserk wallpaper.
+A tiny pixel Claude Code mascot in a Santa hat who lives on your Mac desktop, under your icons and windows. Leave him on screen for a few seconds and he changes: he hauls in a giant sword and ends up in Berserker armour, and later on he's Batman, Iron Man, Doctor Manhattan, a Roman senator, and more. Click the moon and the Berserker change starts right away. It was made as a funny contrast to a very serious Berserk wallpaper.
 
 ![Outfits and expressions](docs/poses.png)
 
@@ -23,7 +23,7 @@ Only one copy runs at a time. The options below work on the binary inside the ap
 
 ## His looks
 
-He normally wears the Santa hat. A new look starts every 50 seconds, going through all of them in turn, so he's almost always dressed up: about 42 seconds in the look, then about 8 going back to Santa and waiting for the next one. The Berserker comes round like the others, with 40 seconds extra because the sword takes a while, and clicking the moon starts it right away. If your windows cover him for more than 20 seconds, he's back in the Santa hat and the next look comes 8 seconds after you uncover him.
+He normally wears the Santa hat. A new look starts every 50 seconds, going through all of them in turn, so he's almost always dressed up: about 42 seconds in the look, then about 8 going back to Santa and waiting for the next one. The Berserker comes round like the others, with 40 seconds extra because the sword takes a while (Batman gets about 16 extra for his entrance), and clicking the moon starts it right away. If your windows cover him for more than 20 seconds, he's back in the Santa hat and the next look comes 8 seconds after you uncover him.
 
 | Look | What he wears |
 | --- | --- |
@@ -35,6 +35,7 @@ He normally wears the Santa hat. A new look starts every 50 seconds, going throu
 | `ironman` | Red and gold armour, arc reactor, thrusters |
 | `manhattan` | Glowing blue, with a hydrogen atom on his forehead |
 | `spiderman` | Web mask and the red and blue suit |
+| `batman` | Cowl, cape, utility belt, a very small bat on his chest |
 | `senator` | Laurel wreath, toga with a purple stripe, a very long speech |
 | `samurai` | Kabuto helmet, lacquered armour, sheathed sword |
 | `astronaut` | White suit, visor, air pack |
@@ -60,9 +61,9 @@ ClawdWallpaper --list                         # show every option
 
 | Option | Choices |
 | --- | --- |
-| `--hat` | `santa`, `wizard`, `crown`, `party`, `viking`, `helm`, `ironhelm`, `laurel`, `kabuto`, `bubble`, `beak`, `tricorn`, `none` |
+| `--hat` | `santa`, `wizard`, `crown`, `party`, `viking`, `helm`, `ironhelm`, `laurel`, `kabuto`, `bubble`, `beak`, `tricorn`, `cowl`, `none` |
 | `--wear` | `none`, or any comma-separated mix of `cape`, `robe`, `armor`, `scarf`, `sword`, `scepter`, `staff`, `axe` |
-| `--suit` | `none`, `ironman`, `manhattan`, `spider`, `toga`, `samurai`, `astronaut`, `plague`, `pirate` |
+| `--suit` | `none`, `ironman`, `manhattan`, `spider`, `toga`, `samurai`, `astronaut`, `plague`, `pirate`, `bat` |
 
 ### Add your own
 
@@ -73,6 +74,10 @@ To add a look, add an entry to `looks` in `main.swift` with its outfit and statu
 **The Berserker change**
 
 He wanders off the left edge and comes back dragging a giant sword flat behind him, hilt in hand, and keeps hauling until all of it is on screen. He lifts it 1 pixel, falls over and looks to Guts for approval, which doesn't come. So he reads the Armor's terms, the helm drops on and the armour clamps shut. Now the sword weighs nothing: he swings it, slams it down, and somehow fits it on his back, then walks home.
+
+**Batman**
+
+A bat-signal lights up the moon. He sees it, a swarm of bats pours in and whirls around him until he's gone, and when they stream off towards the moon he's Batman. He fires a grapple that catches on the menu bar, zips up, and hangs there as a black silhouette against the moon with white eyes, out-brooding Guts. Then he lets go, spreads the cape and glides home in a long swoop, lands crouched in a puff of dust, throws a batarang that loops out and back, and catches it. Obviously.
 
 The other looks are quicker: his hat flies off, the new one drops on, and sparks fly.
 
@@ -107,7 +112,7 @@ He's built to cost almost nothing:
 - He pauses completely while your windows cover him or the display is asleep.
 - Art is drawn at low resolution and scaled by the GPU, and nothing redraws unless it changed.
 - The update rate drops when nothing is happening, and further when he's asleep or in Low Power Mode.
-- The sword, flying hats, sparks, the blood moon and the Eclipse only exist while they're on screen.
+- The sword, flying hats, sparks, bats, the blood moon, the bat-signal and the Eclipse only exist while they're on screen. For Batman's flight the window stretches up to the top of the screen, then shrinks back when he lands.
 
 Measured on an M4 MacBook Air, for the app's own process only, not including the work macOS does to draw it to the screen:
 
@@ -148,4 +153,4 @@ ClawdWallpaper --sheet poses.png                # the image at the top of this p
 
 ## Credits
 
-This is a fan project, not affiliated with or endorsed by Anthropic. Claude, Claude Code and the mascot belong to Anthropic, and Berserk belongs to Kentaro Miura and his publishers, Iron Man and Spider-Man to Marvel, and Doctor Manhattan to DC. The MIT license covers the code in this repo only.
+This is a fan project, not affiliated with or endorsed by Anthropic. Claude, Claude Code and the mascot belong to Anthropic, and Berserk belongs to Kentaro Miura and his publishers, Iron Man and Spider-Man to Marvel, and Doctor Manhattan and Batman to DC. The MIT license covers the code in this repo only.
