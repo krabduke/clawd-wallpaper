@@ -24,8 +24,8 @@ This builds `ClawdWallpaper.app`, copies it to `/Applications` (replacing v1 if 
 - **Floats and breathes**, with a soft glow behind him.
 - **Watches your cursor.** Leave the mouse alone for a while and he looks around instead. Hover over him and he squints happily and taps his feet.
 - **Blinks**, sometimes twice.
-- **Puts the laptop down when he's alone.** After 30 seconds without the mouse moving he bends down, sets it on the floor under him and floats back up. Every so often he picks it up to type for a bit, then puts it back. Move the mouse and he picks it up again.
-- **Types.** Every so often his arms go in, his hands go to the keys, the screen flickers, and he looks down at what he's writing.
+- **Puts the laptop down, most of the time.** It spends about 70% of the time on the floor under him: he bends down, sets it there and floats back up, and it stays still while he bobs above it. After a while he picks it up again and types for a bit, then puts it back.
+- **Types.** While he's holding it, his arms go in, his hands go to the keys, the screen flickers, and he looks down at what he's writing.
 - **The hat.** About 4 seconds after launch, then every 3 minutes, the hat leaves (popped straight up, or blown off by a gust) and comes back a different way each time:
   - dropped from the sky, landing hard enough to squash him
   - flung back in like a boomerang, spinning
@@ -57,7 +57,7 @@ It assumes the **Fill Screen** placement.
 ## Testing
 
 ```sh
-ClawdWallpaper --selftest                   # every entrance, a long pause in the middle of each, typing, eyes
+ClawdWallpaper --selftest                   # every entrance, a long pause in each, typing, eyes, the laptop's 70%
 ClawdWallpaper --frames out/ wallpaper.png  # each entrance as a sheet of frames, and where he sits on the screen
 ```
 

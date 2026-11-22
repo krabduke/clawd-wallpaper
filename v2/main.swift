@@ -204,10 +204,11 @@ final class Clawd: NSObject {
     var nextTap = 20.0, tapStart = -10.0
     var entrance: Entrance?, entranceCount = 0, nextEntrance = 4.0, burstDone = false, twinkled = false
     var sparkles: [Sparkle] = []
-    // The laptop: held, or put down on the floor under him while nobody's around.
+    // The laptop: on the floor under him most of the time (about 70%), in his hands the rest.
     let laptopGroup = CALayer()
-    var laptopMove: (start: Double, down: Bool)? = nil, onFloor = false, nextPickUp = 0.0, floatBegin: CFTimeInterval? = nil
-    static let laptopMoveTime = 1.4, aloneAfter = 30.0
+    var laptopMove: (start: Double, down: Bool)? = nil, onFloor = false, nextLaptopSwitch = 12.0, floatBegin: CFTimeInterval? = nil
+    static let laptopMoveTime = 1.4
+    static let floorTime = 35.0...63.0, heldTime = 15.0...27.0     // averages 49 and 21: 70% on the floor
     var floorY: CGFloat { mid.y - 6.25 * u }        // two pixels under his feet
 
     init(screen s: NSScreen, every minutes: Double = defaultEveryMinutes, show: Bool = true) {
@@ -350,15 +351,15 @@ final class Clawd: NSObject {
         let idle = t - lastMoveT
 
         // What's coming up
-        // The laptop goes down when he's alone, comes up now and then, and always when you're back
-        if laptopMove == nil, entrance == nil {
-            if !onFloor, idle > Clawd.aloneAfter, !typing { laptopMove = (t, true) }
-            else if onFloor, idle < 1 || t >= nextPickUp { laptopMove = (t, false) }
-        }
+        // The laptop goes down for a good while, then comes back up for a shorter one
+        if laptopMove == nil, entrance == nil, t >= nextLaptopSwitch, !typing { laptopMove = (t, !onFloor) }
         if let m = laptopMove, t - m.start >= Clawd.laptopMoveTime {
             laptopMove = nil; onFloor = m.down
-            if m.down { nextPickUp = t + Double.random(in: 25...60) }
-            else if idle > Clawd.aloneAfter { typingStart = t; typingEnd = t + Double.random(in: 4...8); nextTyping = typingEnd + 20 }  // picked it up to get something done
+            nextLaptopSwitch = t + Double.random(in: m.down ? Clawd.floorTime : Clawd.heldTime)
+            if !m.down {                                  // picked it up to get something done
+                typingStart = t + 0.6; typingEnd = typingStart + Double.random(in: 4...8)
+                nextTyping = typingEnd + Double.random(in: 4...8)
+            }
         }
         if entrance == nil, laptopMove == nil, t >= nextEntrance {
             entrance = Entrance(start: t, enter: entranceCount % 4, exit: (entranceCount / 4 + entranceCount) % 2)
@@ -584,7 +585,7 @@ func writePNG(_ image: CGImage, _ path: String) {
 func makeSim(_ screen: NSScreen) -> Clawd {
     let c = Clawd(screen: screen, show: false)
     c.fakeT = 0.01; c.fakeMouse = CGPoint(x: c.center.x + 300, y: c.center.y - 200)
-    c.nextEntrance = 1e9; c.nextTyping = 1e9; c.nextTap = 1e9; c.nextBlink = 1e9
+    c.nextEntrance = 1e9; c.nextTyping = 1e9; c.nextTap = 1e9; c.nextBlink = 1e9; c.nextLaptopSwitch = 1e9
     c.lastMouse = c.fakeMouse!; c.update()
     return c
 }
@@ -637,13 +638,13 @@ func renderFrames(dir: String, wallpaper: String?) {
     var frames: [CGImage] = []
     for at in [0.3, 0.6, 0.9, 1.0, 1.1, 1.2, 2.0, 3.6, 3.9] { step(c, to: at); frames.append(shot(c, crop: crop)) }
     sheet("typing", frames, cols: 5)
-    // Alone: down it goes, and back up when you return
+    // Down it goes, and later back up
     let d = makeSim(screen)
-    step(d, to: 30.2, alone: true)
+    d.nextLaptopSwitch = 0.2; step(d, to: 0.2)
     frames = []
-    for at in [30.4, 30.7, 31.0, 31.3, 31.6, 33.0] { step(d, to: at, alone: true); frames.append(shot(d, crop: crop)) }
-    d.fakeMouse = CGPoint(x: d.center.x - 200, y: d.center.y)
-    for at in [33.3, 33.6, 33.9, 34.2, 34.6, 35.5] { step(d, to: at); frames.append(shot(d, crop: crop)) }
+    for at in [0.4, 0.7, 1.0, 1.3, 1.6, 3.0] { step(d, to: at); frames.append(shot(d, crop: crop)) }
+    d.nextLaptopSwitch = 3.0
+    for at in [3.3, 3.6, 3.9, 4.2, 4.6, 6.0] { step(d, to: at); frames.append(shot(d, crop: crop)) }
     sheet("laptop", frames, cols: 6)
 }
 
@@ -709,29 +710,26 @@ func selftest() -> Bool {
         step(c, to: 4)
         check(c.handL.opacity < 0.01 && abs(c.armL.position.x - c.pt(2, 0).x) < 0.5, "typing: arms not back")
     }
-    // Alone, the laptop goes on the floor; now and then he picks it up to type; and when you're back, it's back in his hands.
+    // The laptop: on the floor about 70% of the time, typed on when it's picked up, and never jumping.
     do {
         let c = makeSim(screen)
-        var downAt: Double? = nil, maxJump: CGFloat = 0, last = c.laptopGroup.convert(c.laptop.position, to: c.root)
-        step(c, to: 40, alone: true) {
+        c.nextLaptopSwitch = 1
+        var floorFrames = 0, frames = 0, typedHeld = false, typedFloor = false, maxJump: CGFloat = 0, downs = 0, wasFloor = false
+        var last = c.laptopGroup.convert(c.laptop.position, to: c.root)
+        step(c, to: 3000) {
             let p = c.laptopGroup.convert(c.laptop.position, to: c.root)
             maxJump = max(maxJump, abs(p.y - last.y) / c.u); last = p
-            if c.onFloor, c.laptopMove == nil, downAt == nil { downAt = c.fakeT }
+            let floor = c.laptopGroup.superlayer === c.root
+            frames += 1; if floor { floorFrames += 1 }
+            if floor && !wasFloor { downs += 1 }; wasFloor = floor
+            if c.typing { if c.onFloor { typedFloor = true } else { typedHeld = true } }
         }
-        check(downAt != nil && c.laptopGroup.superlayer === c.root && abs(c.laptopGroup.position.y - c.floorY) < 0.5, "laptop: never put down")
-        check(c.handL.opacity < 0.01, "laptop: still typing on the floor")
-        var picked = false, typed = false
-        step(c, to: 40 + 65, alone: true) {
-            let p = c.laptopGroup.convert(c.laptop.position, to: c.root)
-            maxJump = max(maxJump, abs(p.y - last.y) / c.u); last = p
-            if !c.onFloor { picked = true }
-            if c.typing { typed = true }
-        }
-        check(picked && typed, "laptop: never picked it up to type while alone")
-        c.fakeMouse = CGPoint(x: c.center.x - 200, y: c.center.y); step(c, to: c.fakeT! + 0.1)
-        step(c, to: c.fakeT! + 3)
-        check(!c.onFloor && c.laptopGroup.superlayer === c.rig && abs(c.laptopGroup.position.y - c.mid.y) < 0.5, "laptop: not picked up when you came back")
+        let share = Double(floorFrames) / Double(frames)
+        check(abs(share - 0.7) < 0.08, "laptop: on the floor \(Int(share * 100))% of the time")
+        check(downs > 20, "laptop: only put down \(downs) times")
+        check(typedHeld && !typedFloor, "laptop: typing at the wrong times")
         check(maxJump < 1, "laptop: jumped \(maxJump) px in a frame")
+        if c.onFloor { check(abs(c.laptopGroup.position.y - c.floorY) < 0.5, "laptop: not on the floor") }
     }
     // Eyes follow the cursor.
     do {
