@@ -209,7 +209,7 @@ final class Clawd: NSObject {
     var laptopMove: (start: Double, down: Bool)? = nil, onFloor = false, nextLaptopSwitch = 12.0, floatBegin: CFTimeInterval? = nil
     static let laptopMoveTime = 1.4
     static let floorTime = 35.0...63.0, heldTime = 15.0...27.0     // averages 49 and 21: 70% on the floor
-    var floorY: CGFloat { mid.y - 6.25 * u }        // two pixels under his feet
+    var floorPos: CGPoint { CGPoint(x: mid.x + 12 * u, y: mid.y - 1.5 * u) }   // beside him on his right, level with his feet
 
     init(screen s: NSScreen, every minutes: Double = defaultEveryMinutes, show: Bool = true) {
         screen = s; every = minutes * 60
@@ -387,13 +387,13 @@ final class Clawd: NSObject {
         var target: CGPoint
         let me = CGPoint(x: center.x, y: center.y + float * u)
         let hover = hypot(mouse.x - me.x, mouse.y - me.y) < 9 * u && idle < 5
-        if laptopMove != nil { target = CGPoint(x: 0, y: 40) }
+        if laptopMove != nil { target = CGPoint(x: 30, y: 20) }
         else if let l = b.look { target = CGPoint(x: (l.x - 9) * 3, y: (l.y - 3.5) * 3) }
         else if typing { target = CGPoint(x: sin(CGFloat(t) * 1.7) * 4, y: 20) }
         else {
             if idle > 10, t >= nextIdleLook || idleLook == nil {
                 nextIdleLook = t + Double.random(in: 4...9)
-                idleLook = onFloor && Int.random(in: 0..<3) == 0 ? CGPoint(x: 0, y: 40)    // checking on the laptop
+                idleLook = onFloor && Int.random(in: 0..<3) == 0 ? CGPoint(x: 30, y: 20)    // checking on the laptop
                     : CGPoint(x: .random(in: -30...30), y: .random(in: -20...8))
             }
             if idle > 10, let l = idleLook { target = l }
@@ -422,9 +422,9 @@ final class Clawd: NSObject {
         // Typing: arms in, hands on the keys, the screen flickering away
         let tIn = smooth(CGFloat((t - typingStart) / 0.25)) * (1 - smooth(CGFloat((t - typingEnd) / 0.25 + 1)))
         let into = tIn
-        let arm = max(into, reach)
-        place(armL, 1 + arm * 2.5, 3 + into * 1.5 + reach * 2)
-        place(armR, 15 - arm * 2.5, 3 + into * 1.5 + reach * 2)
+        // Typing pulls both arms in; reaching for the laptop takes his right arm down
+        place(armL, 1 + into * 2.5, 3 + into * 1.5 + reach * 0.5)
+        place(armR, 15 - into * 2.5, 3 + into * 1.5 + reach * 2.5)   // stays on his side, just lower
         let tapL = max(0, sin(CGFloat(t) * 2 * .pi * 5)), tapR = max(0, sin(CGFloat(t) * 2 * .pi * 5 + .pi * 0.9))
         place(handL, 5, 5.75 - tapL * 0.35 * into); place(handR, 12, 5.75 - tapR * 0.35 * into)
         handL.opacity = Float(into); handR.opacity = Float(into)
@@ -483,19 +483,24 @@ final class Clawd: NSObject {
 
     // Held, it's part of him and floats with him. On the floor it belongs to the window and stays put.
     func placeLaptop(_ t: Double, lift: CGFloat) {
-        let held = mid
+        let held = mid, ground = floorPos
         let off = lift * u + bobNow                       // how far he is from his usual spot, right now
+        let below = CGPoint(x: ground.x, y: ground.y - off)   // the floor spot, as seen from his moving frame
+        // Out to the side in a little arc, up a touch on the way
+        func swing(_ a: CGPoint, _ b: CGPoint, _ q: CGFloat) -> CGPoint {
+            CGPoint(x: a.x + (b.x - a.x) * q, y: a.y + (b.y - a.y) * q + sin(.pi * q) * 2 * u)
+        }
         var floor = false, pos = held
         if let m = laptopMove {
             let p = CGFloat((t - m.start) / Clawd.laptopMoveTime)
             if m.down {
-                if p < 0.6 { let q = smooth(p / 0.6); pos.y = held.y + (floorY - off - held.y) * q }
-                else { floor = true; pos.y = floorY }
+                if p < 0.6 { pos = swing(held, below, smooth(p / 0.6)) }
+                else { floor = true; pos = ground }
             } else {
-                if p < 0.4 { floor = true; pos.y = floorY }
-                else { let q = smooth((p - 0.4) / 0.6); pos.y = (floorY - off) + (held.y - (floorY - off)) * q }
+                if p < 0.4 { floor = true; pos = ground }
+                else { pos = swing(below, held, smooth((p - 0.4) / 0.6)) }
             }
-        } else if onFloor { floor = true; pos.y = floorY }
+        } else if onFloor { floor = true; pos = ground }
         if floor != (laptopGroup.superlayer === root) {
             laptopGroup.removeFromSuperlayer()
             if floor { root.insertSublayer(laptopGroup, above: glow) } else { rig.insertSublayer(laptopGroup, above: bodyGroup) }
@@ -718,7 +723,7 @@ func selftest() -> Bool {
         var last = c.laptopGroup.convert(c.laptop.position, to: c.root)
         step(c, to: 3000) {
             let p = c.laptopGroup.convert(c.laptop.position, to: c.root)
-            maxJump = max(maxJump, abs(p.y - last.y) / c.u); last = p
+            maxJump = max(maxJump, hypot(p.x - last.x, p.y - last.y) / c.u); last = p
             let floor = c.laptopGroup.superlayer === c.root
             frames += 1; if floor { floorFrames += 1 }
             if floor && !wasFloor { downs += 1 }; wasFloor = floor
@@ -729,7 +734,8 @@ func selftest() -> Bool {
         check(downs > 20, "laptop: only put down \(downs) times")
         check(typedHeld && !typedFloor, "laptop: typing at the wrong times")
         check(maxJump < 1, "laptop: jumped \(maxJump) px in a frame")
-        if c.onFloor { check(abs(c.laptopGroup.position.y - c.floorY) < 0.5, "laptop: not on the floor") }
+        if c.onFloor { check(hypot(c.laptopGroup.position.x - c.floorPos.x, c.laptopGroup.position.y - c.floorPos.y) < 0.5, "laptop: not on the floor") }
+        check(c.floorPos.x - c.mid.x > 10 * c.u, "laptop: not beside him")
     }
     // Eyes follow the cursor.
     do {

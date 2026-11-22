@@ -24,7 +24,7 @@ This builds `ClawdWallpaper.app`, copies it to `/Applications` (replacing v1 if 
 - **Floats and breathes**, with a soft glow behind him.
 - **Watches your cursor.** Leave the mouse alone for a while and he looks around instead. Hover over him and he squints happily and taps his feet.
 - **Blinks**, sometimes twice.
-- **Puts the laptop down, most of the time.** It spends about 70% of the time on the floor under him: he bends down, sets it there and floats back up, and it stays still while he bobs above it. After a while he picks it up again and types for a bit, then puts it back.
+- **Puts the laptop down, most of the time.** It spends about 70% of the time on the floor beside him: he bends down, swings it out to his right, sets it down level with his feet and floats back up, and it stays still while he bobs next to it. After a while he picks it up again and types for a bit, then puts it back.
 - **Types.** While he's holding it, his arms go in, his hands go to the keys, the screen flickers, and he looks down at what he's writing.
 - **The hat.** About 4 seconds after launch, then every 3 minutes, the hat leaves (popped straight up, or blown off by a gust) and comes back a different way each time:
   - dropped from the sky, landing hard enough to squash him
