@@ -24,6 +24,7 @@ This builds `ClawdWallpaper.app`, copies it to `/Applications` (replacing v1 if 
 - **Floats and breathes**, with a soft glow behind him.
 - **Watches your cursor.** Leave the mouse alone for a while and he looks around instead. Hover over him and he squints happily and taps his feet.
 - **Blinks**, sometimes twice.
+- **Puts the laptop down when he's alone.** After 30 seconds without the mouse moving he bends down, sets it on the floor under him and floats back up. Every so often he picks it up to type for a bit, then puts it back. Move the mouse and he picks it up again.
 - **Types.** Every so often his arms go in, his hands go to the keys, the screen flickers, and he looks down at what he's writing.
 - **The hat.** About 4 seconds after launch, then every 3 minutes, the hat leaves (popped straight up, or blown off by a gust) and comes back a different way each time:
   - dropped from the sky, landing hard enough to squash him
@@ -48,7 +49,7 @@ Measured on an M4 MacBook Air: about 0.3% CPU on average and 12 MB of memory.
 He sits on the MacBook's built-in screen. His position is a fraction of the wallpaper image, set at the top of `main.swift`:
 
 - `imageSize`: the image's pixel size (2880 × 1864 here)
-- `anchorFrac`: where he floats, x from the left and y from the top (0.40, 0.11: left of centre, in the dark band above the art)
+- `anchorFrac`: where he floats, x from the left and y from the top (0.30, 0.11: well left of centre, in the dark band above the art)
 - `baseUnit`: his size
 
 It assumes the **Fill Screen** placement.

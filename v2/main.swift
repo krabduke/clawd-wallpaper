@@ -12,7 +12,7 @@ import ServiceManagement
 
 // Where he sits, as fractions of the wallpaper image (y from the top): in the dark band above the art, left of centre.
 let imageSize = CGSize(width: 2880, height: 1864)
-let anchorFrac = CGPoint(x: 0.40, y: 0.11)
+let anchorFrac = CGPoint(x: 0.30, y: 0.11)
 let baseUnit: CGFloat = 6                    // points per sprite pixel on a 1710pt-wide screen
 let spritePx: CGFloat = 8                    // bitmap pixels per sprite pixel
 let defaultEveryMinutes = 3.0
@@ -204,7 +204,11 @@ final class Clawd: NSObject {
     var nextTap = 20.0, tapStart = -10.0
     var entrance: Entrance?, entranceCount = 0, nextEntrance = 4.0, burstDone = false, twinkled = false
     var sparkles: [Sparkle] = []
-    var hatInFront = false
+    // The laptop: held, or put down on the floor under him while nobody's around.
+    let laptopGroup = CALayer()
+    var laptopMove: (start: Double, down: Bool)? = nil, onFloor = false, nextPickUp = 0.0, floatBegin: CFTimeInterval? = nil
+    static let laptopMoveTime = 1.4, aloneAfter = 30.0
+    var floorY: CGFloat { mid.y - 6.25 * u }        // two pixels under his feet
 
     init(screen s: NSScreen, every minutes: Double = defaultEveryMinutes, show: Bool = true) {
         screen = s; every = minutes * 60
@@ -237,6 +241,8 @@ final class Clawd: NSObject {
         for l in legs { add(l, legArt) }
         add(armL, armArt); add(armR, armArt); add(body, bodyArt); add(eyeL, eyeArt); add(eyeR, eyeArt)
         add(laptop, laptopArt); add(screenGlow, screenArt); add(handL, handArt); add(handR, handArt)
+        quiet(laptopGroup); laptopGroup.bounds = bounds; laptopGroup.position = mid
+        for l in [laptop, screenGlow, handL, handR] { laptopGroup.addSublayer(l) }   // in front of him, but not squashed with him
         laptop.position = pt(laptopArt.x + laptopArt.w / 2, laptopArt.y + laptopArt.h / 2)
         screenGlow.position = pt(screenArt.x + screenArt.w / 2, screenArt.y + screenArt.h / 2)
         body.position = pt(9, 3)
@@ -249,6 +255,7 @@ final class Clawd: NSObject {
         pompom.anchorPoint = CGPoint(x: 0, y: 1)                        // hangs off the tip
         pompom.position = CGPoint(x: (pompomArt.x - hatArt.x) * u, y: (0 - pompomArt.y) * u)
         hat.addSublayer(pompom)
+        rig.addSublayer(laptopGroup)
         rig.addSublayer(hat)
         if show { window.orderFront(nil) }
         update()
@@ -285,7 +292,10 @@ final class Clawd: NSObject {
             a.isRemovedOnCompletion = false
             return a
         }
-        rig.add(loop("position.y", 0.45 * u, cycles: 2), forKey: "float")
+        let float = loop("position.y", 0.45 * u, cycles: 2)
+        let begin = CACurrentMediaTime()
+        float.beginTime = rig.convertTime(begin, from: nil); floatBegin = begin
+        rig.add(float, forKey: "float")
         bodyGroup.add(loop("transform.scale.y", 0.012, cycles: 4, phase: 0.6), forKey: "breathe-y")
         bodyGroup.add(loop("transform.scale.x", -0.012, cycles: 4, phase: 0.6), forKey: "breathe-x")
         glow.add(loop("opacity", 0.15, cycles: 2, additive: false, base: 0.85), forKey: "pulse")
@@ -340,13 +350,23 @@ final class Clawd: NSObject {
         let idle = t - lastMoveT
 
         // What's coming up
-        if entrance == nil, t >= nextEntrance {
+        // The laptop goes down when he's alone, comes up now and then, and always when you're back
+        if laptopMove == nil, entrance == nil {
+            if !onFloor, idle > Clawd.aloneAfter, !typing { laptopMove = (t, true) }
+            else if onFloor, idle < 1 || t >= nextPickUp { laptopMove = (t, false) }
+        }
+        if let m = laptopMove, t - m.start >= Clawd.laptopMoveTime {
+            laptopMove = nil; onFloor = m.down
+            if m.down { nextPickUp = t + Double.random(in: 25...60) }
+            else if idle > Clawd.aloneAfter { typingStart = t; typingEnd = t + Double.random(in: 4...8); nextTyping = typingEnd + 20 }  // picked it up to get something done
+        }
+        if entrance == nil, laptopMove == nil, t >= nextEntrance {
             entrance = Entrance(start: t, enter: entranceCount % 4, exit: (entranceCount / 4 + entranceCount) % 2)
             entranceCount += 1; burstDone = false; twinkled = false
             typingEnd = min(typingEnd, t)
         }
         if let e = entrance, t >= e.end { entrance = nil; nextEntrance = t + every }
-        if entrance == nil, !typing, t >= nextTyping {
+        if entrance == nil, laptopMove == nil, !onFloor, !typing, t >= nextTyping {
             typingStart = t; typingEnd = t + Double.random(in: 3...7); nextTyping = typingEnd + Double.random(in: 12...35)
         }
         if t >= nextBlink {
@@ -358,19 +378,22 @@ final class Clawd: NSObject {
         // The hat, and what it's making him do
         var h = HatState(), b = BodyState()
         if let e = entrance { (h, b) = e.at(t); sparkleEvents(e, t) }
-        let float = b.lift
+        let (bend, reach) = laptopPose(t)
+        let float = b.lift + bend
         let sx = b.sx, sy = b.sy
 
         // Where he looks: the hat while it's flying, the laptop while typing, otherwise you
         var target: CGPoint
         let me = CGPoint(x: center.x, y: center.y + float * u)
         let hover = hypot(mouse.x - me.x, mouse.y - me.y) < 9 * u && idle < 5
-        if let l = b.look { target = CGPoint(x: (l.x - 9) * 3, y: (l.y - 3.5) * 3) }
+        if laptopMove != nil { target = CGPoint(x: 0, y: 40) }
+        else if let l = b.look { target = CGPoint(x: (l.x - 9) * 3, y: (l.y - 3.5) * 3) }
         else if typing { target = CGPoint(x: sin(CGFloat(t) * 1.7) * 4, y: 20) }
         else {
             if idle > 10, t >= nextIdleLook || idleLook == nil {
                 nextIdleLook = t + Double.random(in: 4...9)
-                idleLook = CGPoint(x: .random(in: -30...30), y: .random(in: -20...8))
+                idleLook = onFloor && Int.random(in: 0..<3) == 0 ? CGPoint(x: 0, y: 40)    // checking on the laptop
+                    : CGPoint(x: .random(in: -30...30), y: .random(in: -20...8))
             }
             if idle > 10, let l = idleLook { target = l }
             else { target = CGPoint(x: (mouse.x - me.x) / u, y: -(mouse.y - me.y) / u) }
@@ -398,13 +421,15 @@ final class Clawd: NSObject {
         // Typing: arms in, hands on the keys, the screen flickering away
         let tIn = smooth(CGFloat((t - typingStart) / 0.25)) * (1 - smooth(CGFloat((t - typingEnd) / 0.25 + 1)))
         let into = tIn
-        place(armL, 1 + into * 2.5, 3 + into * 1.5)
-        place(armR, 15 - into * 2.5, 3 + into * 1.5)
+        let arm = max(into, reach)
+        place(armL, 1 + arm * 2.5, 3 + into * 1.5 + reach * 2)
+        place(armR, 15 - arm * 2.5, 3 + into * 1.5 + reach * 2)
         let tapL = max(0, sin(CGFloat(t) * 2 * .pi * 5)), tapR = max(0, sin(CGFloat(t) * 2 * .pi * 5 + .pi * 0.9))
         place(handL, 5, 5.75 - tapL * 0.35 * into); place(handR, 12, 5.75 - tapR * 0.35 * into)
         handL.opacity = Float(into); handR.opacity = Float(into)
         let flicker = into > 0 ? 0.2 * (sin(CGFloat(t) * 23) * sin(CGFloat(t) * 7.3)) : 0
-        screenGlow.opacity = Float(0.45 + 0.35 * into + flicker)
+        screenGlow.opacity = Float((0.45 + 0.35 * into + flicker) * (onFloor && laptopMove == nil ? 0.5 : 1))
+        placeLaptop(t, lift: float)
 
         // Eyes: follow, blink, squint when happy
         var blink: CGFloat = 1
@@ -420,7 +445,7 @@ final class Clawd: NSObject {
         // The hat sits on his head, squashing with him, unless it's off on an adventure
         let headTop = 7.5 - 7.5 * sy                      // how far the squash pulls the brim down
         hat.position = pt(9 + h.dx, (h.onHead ? headTop : 0) + h.dy)
-        if !h.onHead { hat.position.y -= b.lift * u }   // in flight it doesn't jump when he does
+        if !h.onHead { hat.position.y -= float * u }   // in flight it doesn't jump or bend when he does
         hat.setAffineTransform(CGAffineTransform(rotationAngle: -h.rot).scaledBy(x: h.sx * (h.onHead ? sx : 1), y: h.sy))
         hat.opacity = Float(h.alpha)
         pompom.setAffineTransform(CGAffineTransform(rotationAngle: -h.pompom))
@@ -429,8 +454,52 @@ final class Clawd: NSObject {
 
         // Is anything moving that needs every frame?
         let settling = abs(goal.x - look.x) > 0.01 || abs(goal.y - look.y) > 0.01
-        active = entrance != nil || !sparkles.isEmpty || (t >= typingStart - 0.05 && t < typingEnd + 0.3)
+        active = entrance != nil || laptopMove != nil || !sparkles.isEmpty || (t >= typingStart - 0.05 && t < typingEnd + 0.3)
             || t - blinkStart < 0.45 || tapping || idle < 0.4 || settling
+    }
+
+    // MARK: The laptop
+
+    // How far he bends down (negative lift) and how far his arms reach, while the laptop goes down or up.
+    func laptopPose(_ t: Double) -> (CGFloat, CGFloat) {
+        guard let m = laptopMove else { return (0, 0) }
+        let p = CGFloat((t - m.start) / Clawd.laptopMoveTime)
+        if m.down {                                      // down with it, let go, back up
+            if p < 0.6 { let q = smooth(p / 0.6); return (-3 * q, q) }
+            let q = smooth((p - 0.6) / 0.4); return (-3 * (1 - q), 1 - q)
+        } else {                                         // down to it, grab it, up with it
+            if p < 0.4 { let q = smooth(p / 0.4); return (-3 * q, q) }
+            let q = smooth((p - 0.4) / 0.6); return (-3 * (1 - q), 1 - q)
+        }
+    }
+
+    // His float, as Core Animation is playing it right now, so a laptop on the floor can stay still under him.
+    var bobNow: CGFloat {
+        guard let b = floatBegin else { return 0 }
+        let k = CGFloat((CACurrentMediaTime() - b) / 7.2) * 2 * .pi * 2
+        return 0.45 * u * sin(k)
+    }
+
+    // Held, it's part of him and floats with him. On the floor it belongs to the window and stays put.
+    func placeLaptop(_ t: Double, lift: CGFloat) {
+        let held = mid
+        let off = lift * u + bobNow                       // how far he is from his usual spot, right now
+        var floor = false, pos = held
+        if let m = laptopMove {
+            let p = CGFloat((t - m.start) / Clawd.laptopMoveTime)
+            if m.down {
+                if p < 0.6 { let q = smooth(p / 0.6); pos.y = held.y + (floorY - off - held.y) * q }
+                else { floor = true; pos.y = floorY }
+            } else {
+                if p < 0.4 { floor = true; pos.y = floorY }
+                else { let q = smooth((p - 0.4) / 0.6); pos.y = (floorY - off) + (held.y - (floorY - off)) * q }
+            }
+        } else if onFloor { floor = true; pos.y = floorY }
+        if floor != (laptopGroup.superlayer === root) {
+            laptopGroup.removeFromSuperlayer()
+            if floor { root.insertSublayer(laptopGroup, above: glow) } else { rig.insertSublayer(laptopGroup, above: bodyGroup) }
+        }
+        if laptopGroup.position != pos { laptopGroup.position = pos }
     }
 
     // MARK: Sparkles
@@ -519,8 +588,8 @@ func makeSim(_ screen: NSScreen) -> Clawd {
     c.lastMouse = c.fakeMouse!; c.update()
     return c
 }
-func step(_ c: Clawd, to t: Double, each: (() -> Void)? = nil) {
-    while (c.fakeT ?? 0) < t { c.fakeT = min(t, (c.fakeT ?? 0) + 1.0 / 60); c.lastMoveT = c.fakeT!; c.update(); each?() }
+func step(_ c: Clawd, to t: Double, alone: Bool = false, each: (() -> Void)? = nil) {
+    while (c.fakeT ?? 0) < t { c.fakeT = min(t, (c.fakeT ?? 0) + 1.0 / 60); if !alone { c.lastMoveT = c.fakeT! }; c.update(); each?() }
 }
 
 func renderFrames(dir: String, wallpaper: String?) {
@@ -568,6 +637,14 @@ func renderFrames(dir: String, wallpaper: String?) {
     var frames: [CGImage] = []
     for at in [0.3, 0.6, 0.9, 1.0, 1.1, 1.2, 2.0, 3.6, 3.9] { step(c, to: at); frames.append(shot(c, crop: crop)) }
     sheet("typing", frames, cols: 5)
+    // Alone: down it goes, and back up when you return
+    let d = makeSim(screen)
+    step(d, to: 30.2, alone: true)
+    frames = []
+    for at in [30.4, 30.7, 31.0, 31.3, 31.6, 33.0] { step(d, to: at, alone: true); frames.append(shot(d, crop: crop)) }
+    d.fakeMouse = CGPoint(x: d.center.x - 200, y: d.center.y)
+    for at in [33.3, 33.6, 33.9, 34.2, 34.6, 35.5] { step(d, to: at); frames.append(shot(d, crop: crop)) }
+    sheet("laptop", frames, cols: 6)
 }
 
 func selftest() -> Bool {
@@ -577,7 +654,7 @@ func selftest() -> Bool {
     func tidy(_ c: Clawd) -> Bool {
         c.sparkles.isEmpty && c.entrance == nil && abs(c.hat.opacity - 1) < 0.001
             && abs(c.hat.affineTransform().b) < 0.02 && abs(c.hat.position.x - c.pt(9, 0).x) < 0.5
-            && abs(c.bodyGroup.affineTransform().a - 1) < 0.03 && c.rig.sublayers?.count == 2
+            && abs(c.bodyGroup.affineTransform().a - 1) < 0.03 && c.rig.sublayers?.count == 3 && !c.onFloor
     }
     for enter in 0..<4 { for exit in 0..<2 {
         let name = "entrance \(enter)/\(exit)"
@@ -631,6 +708,30 @@ func selftest() -> Bool {
         check(c.look.y > 0.2, "typing: not looking at the laptop")
         step(c, to: 4)
         check(c.handL.opacity < 0.01 && abs(c.armL.position.x - c.pt(2, 0).x) < 0.5, "typing: arms not back")
+    }
+    // Alone, the laptop goes on the floor; now and then he picks it up to type; and when you're back, it's back in his hands.
+    do {
+        let c = makeSim(screen)
+        var downAt: Double? = nil, maxJump: CGFloat = 0, last = c.laptopGroup.convert(c.laptop.position, to: c.root)
+        step(c, to: 40, alone: true) {
+            let p = c.laptopGroup.convert(c.laptop.position, to: c.root)
+            maxJump = max(maxJump, abs(p.y - last.y) / c.u); last = p
+            if c.onFloor, c.laptopMove == nil, downAt == nil { downAt = c.fakeT }
+        }
+        check(downAt != nil && c.laptopGroup.superlayer === c.root && abs(c.laptopGroup.position.y - c.floorY) < 0.5, "laptop: never put down")
+        check(c.handL.opacity < 0.01, "laptop: still typing on the floor")
+        var picked = false, typed = false
+        step(c, to: 40 + 65, alone: true) {
+            let p = c.laptopGroup.convert(c.laptop.position, to: c.root)
+            maxJump = max(maxJump, abs(p.y - last.y) / c.u); last = p
+            if !c.onFloor { picked = true }
+            if c.typing { typed = true }
+        }
+        check(picked && typed, "laptop: never picked it up to type while alone")
+        c.fakeMouse = CGPoint(x: c.center.x - 200, y: c.center.y); step(c, to: c.fakeT! + 0.1)
+        step(c, to: c.fakeT! + 3)
+        check(!c.onFloor && c.laptopGroup.superlayer === c.rig && abs(c.laptopGroup.position.y - c.mid.y) < 0.5, "laptop: not picked up when you came back")
+        check(maxJump < 1, "laptop: jumped \(maxJump) px in a frame")
     }
     // Eyes follow the cursor.
     do {
