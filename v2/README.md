@@ -1,6 +1,6 @@
 # clawd-wallpaper v2
 
-A smaller, simpler Clawd: just the Claude Code mascot, holding a laptop, in a Santa hat. He floats in the dark sky above the art on an ASCII *Creation of Adam* wallpaper, and every few minutes his hat comes off and makes an entrance.
+A smaller, simpler Clawd: just the Claude Code mascot, a laptop, and a Santa hat that comes and goes. He floats in the dark sky above the art on an ASCII *Creation of Adam* wallpaper, and every few minutes his Santa hat makes an entrance.
 
 v1, with all the looks and the Berserk scenes, is still in the folder above this one.
 
@@ -17,7 +17,7 @@ This builds `ClawdWallpaper.app`, copies it to `/Applications` (replacing v1 if 
 
 - Stop him for now: `pkill ClawdWallpaper`
 - Stop him opening at login: `/Applications/ClawdWallpaper.app/Contents/MacOS/ClawdWallpaper --no-login`
-- Hat entrances more or less often: `ClawdWallpaper --every 1` (minutes, default 3)
+- Hat entrances more or less often: `ClawdWallpaper --every 1` (minutes per on-and-off round, default 3)
 
 ## What he does
 
@@ -26,13 +26,15 @@ This builds `ClawdWallpaper.app`, copies it to `/Applications` (replacing v1 if 
 - **Blinks**, sometimes twice.
 - **Puts the laptop down, most of the time.** It spends about 70% of the time on the floor beside him: he bends down, swings it out to his right, sets it down level with his feet and floats back up, and it stays still while he bobs next to it. After a while he picks it up again and types for a bit, then puts it back.
 - **Types.** While he's holding it, his arms go in, his hands go to the keys, the screen flickers, and he looks down at what he's writing.
-- **The hat.** About 4 seconds after launch, then every 3 minutes, the hat leaves (popped straight up, or blown off by a gust) and comes back a different way each time:
+- **The hat.** He's bare-headed about 70% of the time. About 4 seconds after launch, and then roughly every 3 minutes, the hat makes an entrance, a different one each time:
   - dropped from the sky, landing hard enough to squash him
   - flung back in like a boomerang, spinning
   - waiting in the air, so he crouches and jumps up into it
   - appearing out of nowhere with a flourish
 
-  It lands with a burst of sparkles. Two ways off and four ways back make eight different entrances before any repeats.
+  After about a minute it leaves again, popped straight up or blown off by a gust.
+
+  It lands with a burst of sparkles.
 
 ## Smooth and cheap
 
@@ -57,7 +59,7 @@ It assumes the **Fill Screen** placement.
 ## Testing
 
 ```sh
-ClawdWallpaper --selftest                   # every entrance, a long pause in each, typing, eyes, the laptop's 70%
+ClawdWallpaper --selftest                   # every entrance, a long pause in each, typing, eyes, the hat's and laptop's 70%
 ClawdWallpaper --frames out/ wallpaper.png  # each entrance as a sheet of frames, and where he sits on the screen
 ```
 

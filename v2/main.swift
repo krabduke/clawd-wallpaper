@@ -96,18 +96,23 @@ struct HatState { var dx: CGFloat = 0, dy: CGFloat = 0, rot: CGFloat = 0, sx: CG
 // What his body is doing about it.
 struct BodyState { var lift: CGFloat = 0, sx: CGFloat = 1, sy: CGFloat = 1, look: CGPoint? = nil, squint = false }
 
-// The hat leaves one of two ways and comes back one of four, a different pairing each time.
+// The hat leaves one of two ways and comes back one of four. Live, it leaves and stays off a while
+// (`.leave`), then comes back later (`.arrive`); `.both` does the whole round trip in one go.
+enum HatTrip { case both, leave, arrive }
 struct Entrance {
     let start: Double, enter: Int, exit: Int
+    var trip = HatTrip.both
     static let exitTime = 0.9, gap = 0.35, settle = 1.2
     static let enterTimes = [0.65, 1.5, 1.5, 0.5]       // until it's on his head
-    var landsAt: Double { start + Entrance.exitTime + Entrance.gap + Entrance.enterTimes[enter] }
-    var end: Double { landsAt + Entrance.settle }
+    var skip: Double { trip == .arrive ? Entrance.exitTime + Entrance.gap : 0 }   // an arrival starts at the way back
+    var landsAt: Double { start - skip + Entrance.exitTime + Entrance.gap + Entrance.enterTimes[enter] }
+    var end: Double { trip == .leave ? start + Entrance.exitTime : landsAt + Entrance.settle }
 
     func at(_ t: Double) -> (HatState, BodyState) {
         var h = HatState(), b = BodyState()
-        let a = CGFloat(t - start)
+        let a = CGFloat(t - start + skip)
         let exitT = CGFloat(Entrance.exitTime), enterAt = CGFloat(Entrance.exitTime + Entrance.gap)
+        if trip == .leave, a >= exitT { h.alpha = 0; return (h, b) }
         if a < exitT {                                    // off it goes
             let k = a / exitT
             h.onHead = false
@@ -202,7 +207,10 @@ final class Clawd: NSObject {
     var nextBlink = 2.0, blinkStart = -10.0, doubleBlink = false
     var nextTyping = 8.0, typingStart = -100.0, typingEnd = -100.0
     var nextTap = 20.0, tapStart = -10.0
-    var entrance: Entrance?, entranceCount = 0, nextEntrance = 4.0, burstDone = false, twinkled = false
+    var entrance: Entrance?, entranceCount = 0, leaveCount = 0, burstDone = false, twinkled = false
+    // The hat is off most of the time (about 70%), and on for a while after each entrance.
+    var hatOn = false, nextHatSwitch = 4.0
+    func hatTime(on: Bool) -> Double { every * (on ? 0.3 : 0.7) * Double.random(in: 0.75...1.25) }
     var sparkles: [Sparkle] = []
     // The laptop: on the floor under him most of the time (about 70%), in his hands the rest.
     let laptopGroup = CALayer()
@@ -361,12 +369,16 @@ final class Clawd: NSObject {
                 nextTyping = typingEnd + Double.random(in: 4...8)
             }
         }
-        if entrance == nil, laptopMove == nil, t >= nextEntrance {
-            entrance = Entrance(start: t, enter: entranceCount % 4, exit: (entranceCount / 4 + entranceCount) % 2)
-            entranceCount += 1; burstDone = false; twinkled = false
+        if entrance == nil, laptopMove == nil, t >= nextHatSwitch {
+            if hatOn { entrance = Entrance(start: t, enter: 0, exit: leaveCount % 2, trip: .leave); leaveCount += 1 }
+            else { entrance = Entrance(start: t, enter: entranceCount % 4, exit: 0, trip: .arrive); entranceCount += 1 }
+            burstDone = false; twinkled = false
             typingEnd = min(typingEnd, t)
         }
-        if let e = entrance, t >= e.end { entrance = nil; nextEntrance = t + every }
+        if let e = entrance, t >= e.end {
+            entrance = nil; hatOn = e.trip != .leave
+            nextHatSwitch = t + hatTime(on: hatOn)
+        }
         if entrance == nil, laptopMove == nil, !onFloor, !typing, t >= nextTyping {
             typingStart = t; typingEnd = t + Double.random(in: 3...7); nextTyping = typingEnd + Double.random(in: 12...35)
         }
@@ -378,7 +390,8 @@ final class Clawd: NSObject {
 
         // The hat, and what it's making him do
         var h = HatState(), b = BodyState()
-        if let e = entrance { (h, b) = e.at(t); sparkleEvents(e, t) }
+        if let e = entrance { (h, b) = e.at(t); if e.trip != .leave { sparkleEvents(e, t) } }
+        else if !hatOn { h.alpha = 0 }
         let (bend, reach) = laptopPose(t)
         let float = b.lift + bend
         let sx = b.sx, sy = b.sy
@@ -590,7 +603,7 @@ func writePNG(_ image: CGImage, _ path: String) {
 func makeSim(_ screen: NSScreen) -> Clawd {
     let c = Clawd(screen: screen, show: false)
     c.fakeT = 0.01; c.fakeMouse = CGPoint(x: c.center.x + 300, y: c.center.y - 200)
-    c.nextEntrance = 1e9; c.nextTyping = 1e9; c.nextTap = 1e9; c.nextBlink = 1e9; c.nextLaptopSwitch = 1e9
+    c.hatOn = true; c.nextHatSwitch = 1e9; c.nextTyping = 1e9; c.nextTap = 1e9; c.nextBlink = 1e9; c.nextLaptopSwitch = 1e9
     c.lastMouse = c.fakeMouse!; c.update()
     return c
 }
@@ -629,7 +642,7 @@ func renderFrames(dir: String, wallpaper: String?) {
     for (n, name) in ["drop", "boomerang", "jump", "pop"].enumerated() {
         for exit in 0..<2 {
             let c = makeSim(screen)
-            c.entrance = Entrance(start: c.fakeT!, enter: n, exit: exit); c.nextEntrance = 1e9
+            c.entrance = Entrance(start: c.fakeT!, enter: n, exit: exit)
             let e = c.entrance!, lands = e.landsAt - e.start
             var frames: [CGImage] = []
             for at in [0.15, 0.45, 0.8, 1.3, lands - 0.5, lands - 0.25, lands - 0.05, lands + 0.05, lands + 0.15, lands + 0.3, lands + 0.6, lands + 1.2] {
@@ -696,13 +709,36 @@ func selftest() -> Bool {
             check(tidy(c2), "\(name): paused at \(at)s, not tidy")
         }
     } }
-    // Entrances come round on their own, every one different from the last.
+    // On its own: off about 70% of the time, every entrance different from the last, both ways of leaving.
     do {
         let c = makeSim(screen)
-        c.nextEntrance = 2
-        var seen: [Int] = []
-        step(c, to: 2 + 4 * (c.every + 5)) { if let e = c.entrance, seen.last != e.enter * 2 + e.exit { seen.append(e.enter * 2 + e.exit) } }
-        check(seen.count >= 4 && Set(seen.prefix(4)).count == 4, "rotation: \(seen)")
+        c.hatOn = false; c.nextHatSwitch = 2
+        var arrivals: [Int] = [], exits = Set<Int>(), last: Entrance? = nil, off = 0, frames = 0
+        step(c, to: 2 + 20 * c.every) {
+            if let e = c.entrance, e.start != last?.start {
+                last = e
+                if e.trip == .arrive { arrivals.append(e.enter) } else { exits.insert(e.exit) }
+            }
+            frames += 1; if c.hat.opacity < 0.5 { off += 1 }
+        }
+        let share = Double(off) / Double(frames)
+        check(abs(share - 0.7) < 0.08, "hat: off \(Int(share * 100))% of the time")
+        check(arrivals.count >= 8 && Set(arrivals.prefix(4)).count == 4, "hat: entrances \(arrivals)")
+        check(exits == [0, 1], "hat: only left one way: \(exits)")
+    }
+    // A leave and an arrival on their own come out tidy.
+    do {
+        let c = makeSim(screen)
+        c.entrance = Entrance(start: c.fakeT!, enter: 0, exit: 1, trip: .leave)
+        step(c, to: c.entrance!.end + 1)
+        check(c.entrance == nil && !c.hatOn && c.hat.opacity < 0.01 && c.sparkles.isEmpty, "hat: didn't come off cleanly")
+        for enter in 0..<4 {
+            c.entrance = Entrance(start: c.fakeT!, enter: enter, exit: 0, trip: .arrive); c.burstDone = false; c.twinkled = false
+            var sparkled = false
+            step(c, to: c.entrance!.end + 1) { if !c.sparkles.isEmpty { sparkled = true } }
+            check(tidy(c) && c.hatOn && sparkled, "hat: arrival \(enter) not tidy")
+            c.entrance = Entrance(start: c.fakeT!, enter: 0, exit: enter % 2, trip: .leave); step(c, to: c.entrance!.end + 1)
+        }
     }
     // Typing: arms in, hands out, and all back afterwards.
     do {
