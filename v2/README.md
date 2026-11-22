@@ -32,9 +32,7 @@ This builds `ClawdWallpaper.app`, copies it to `/Applications` (replacing v1 if 
   - waiting in the air, so he crouches and jumps up into it
   - appearing out of nowhere with a flourish
 
-  After about a minute it leaves again, popped straight up or blown off by a gust.
-
-  It lands with a burst of sparkles.
+  It lands with a burst of sparkles. After about a minute it leaves again, popped straight up or blown off by a gust.
 
 ## Smooth and cheap
 
