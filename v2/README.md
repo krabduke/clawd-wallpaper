@@ -25,6 +25,7 @@ This builds `ClawdWallpaper.app`, copies it to `/Applications` (replacing v1 if 
 - **Watches your cursor.** Leave the mouse alone for a while and he looks around instead. Hover over him and he squints happily and taps his feet.
 - **Blinks**, sometimes twice.
 - **Keeps the laptop on the floor, almost all the time.** It spends about 90% of the time on the floor beside him: he bends down, swings it out to his right, sets it down level with his feet and floats back up, and it stays still while he bobs next to it. Every minute and a half or so he picks it up for about 10 seconds, types a little, then puts it back.
+- **Click him and he gets to work.** Click Clawd or his laptop and he picks it up and types. If he's already holding it, he starts typing straight away. A click in a window that's over him doesn't count.
 - **Types with one hand.** While he's holding it, the laptop sits off to his right, propped on his right arm. His left hand reaches over and hops about the keys, the screen flickers, and he looks over at what he's writing.
 - **The hat.** He's bare-headed about 70% of the time. About 4 seconds after launch, and then roughly every 3 minutes, the hat makes an entrance, a different one each time:
   - dropped from the sky, landing hard enough to squash him

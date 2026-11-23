@@ -218,6 +218,7 @@ final class Clawd: NSObject {
     static let laptopMoveTime = 1.4
     static let floorTime = 75.0...105.0, heldTime = 8.0...12.0     // averages 90 and 10: 90% on the floor
     // Held, it's off to his right, propped on his right arm, and his left hand reaches over to type.
+    var wantLaptop = false     // clicked: pick it up and type as soon as he's free
     var heldPos: CGPoint { CGPoint(x: mid.x + 9 * u, y: mid.y + 0.5 * u) }
     var floorPos: CGPoint { CGPoint(x: mid.x + 12 * u, y: mid.y - 1.5 * u) }   // beside him on his right, level with his feet
 
@@ -330,6 +331,18 @@ final class Clawd: NSObject {
         occlusionChanged()
     }
 
+    // A click on the desktop, in screen coordinates. On him or his laptop, he gets typing.
+    @discardableResult func handleClick(at p: CGPoint) -> Bool {
+        guard visible else { return false }
+        let o = window.frame.origin
+        func onScreen(_ r: CGRect) -> CGRect { r.offsetBy(dx: o.x, dy: o.y).insetBy(dx: -1.5 * u, dy: -1.5 * u) }
+        let me = onScreen(bodyGroup.convert(body.frame, to: root).offsetBy(dx: 0, dy: -1.5 * u)), lap = onScreen(laptopGroup.convert(laptop.frame, to: root))
+        guard me.contains(p) || lap.contains(p), clickReachesDesktop(p) else { return false }
+        wantLaptop = true
+        update(); syncLink()
+        return true
+    }
+
     func close() { link?.invalidate(); link = nil; timer?.invalidate(); timer = nil; window.orderOut(nil) }
 
     func occlusionChanged() {
@@ -362,6 +375,15 @@ final class Clawd: NSObject {
         let idle = t - lastMoveT
 
         // What's coming up
+        // You clicked him: up comes the laptop (or, if he's got it, straight to typing)
+        if wantLaptop, laptopMove == nil, entrance == nil {
+            wantLaptop = false
+            if onFloor { nextLaptopSwitch = t }
+            else if !typing {
+                typingStart = t; typingEnd = t + Double.random(in: 3...6)
+                nextLaptopSwitch = max(nextLaptopSwitch, typingEnd + 2); nextTyping = nextLaptopSwitch + 1
+            } else { typingEnd += 3; nextLaptopSwitch = max(nextLaptopSwitch, typingEnd + 2) }
+        }
         // The laptop goes down for a good while, then comes back up for a shorter one
         if laptopMove == nil, entrance == nil, t >= nextLaptopSwitch, !typing { laptopMove = (t, !onFloor) }
         if let m = laptopMove, t - m.start >= Clawd.laptopMoveTime {
@@ -593,9 +615,24 @@ func homeScreen() -> NSScreen? {
     } ?? NSScreen.screens.first
 }
 
+// Is the desktop under this point, rather than a window? So a click in a window over him doesn't count.
+// Reads window positions only, no names or contents.
+func clickReachesDesktop(_ p: CGPoint) -> Bool {
+    guard let primary = NSScreen.screens.first,
+          let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return false }
+    let flipped = CGPoint(x: p.x, y: primary.frame.height - p.y)
+    return !list.contains { w in
+        guard let layer = w[kCGWindowLayer as String] as? Int, (0..<20).contains(layer),
+              (w[kCGWindowAlpha as String] as? Double ?? 1) > 0,
+              let b = w[kCGWindowBounds as String], let rect = CGRect(dictionaryRepresentation: b as! CFDictionary) else { return false }
+        return rect.contains(flipped)
+    }
+}
+
 final class Controller {
     var clawd: Clawd?
     var every = defaultEveryMinutes
+    var clickMonitor: Any?
     func rebuild() {
         clawd?.close()
         guard let s = homeScreen() else { return }
@@ -605,6 +642,10 @@ final class Controller {
     }
     func start() {
         rebuild()
+        // Only uses where the click landed, and only wakes up when there is one.
+        clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] _ in
+            self?.clawd?.handleClick(at: NSEvent.mouseLocation)
+        }
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
             self?.rebuild()
         }
@@ -790,6 +831,22 @@ func selftest() -> Bool {
         check(maxJump < 1, "laptop: jumped \(maxJump) px in a frame")
         if c.onFloor { check(hypot(c.laptopGroup.position.x - c.floorPos.x, c.laptopGroup.position.y - c.floorPos.y) < 0.5, "laptop: not on the floor") }
         check(c.floorPos.x - c.mid.x > 10 * c.u, "laptop: not beside him")
+    }
+    // Clicking him: picks the laptop up and types, or types right away if he's holding it.
+    do {
+        let c = makeSim(screen)
+        c.onFloor = true; c.nextTyping = 1e9; step(c, to: 0.5)
+        c.wantLaptop = true
+        var typed = false
+        step(c, to: 4) { if c.typing && !c.onFloor { typed = true } }
+        check(typed && !c.onFloor, "click: didn't pick it up and type")
+        step(c, to: 12)
+        c.wantLaptop = true; step(c, to: 12.2)
+        check(c.typing && !c.onFloor, "click: holding it, didn't type")
+        let d = makeSim(screen)
+        d.onFloor = true; d.entrance = Entrance(start: d.fakeT!, enter: 0, exit: 0); d.wantLaptop = true
+        step(d, to: d.entrance!.end + 3)
+        check(!d.onFloor && d.typing, "click: during the hat, never picked it up")
     }
     // Eyes follow the cursor.
     do {
