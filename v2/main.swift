@@ -205,18 +205,20 @@ final class Clawd: NSObject {
     var lastT = 0.0, lastMouse = CGPoint.zero, lastMoveT = 0.0
     var look = CGPoint.zero, idleLook: CGPoint? = nil, nextIdleLook = 0.0
     var nextBlink = 2.0, blinkStart = -10.0, doubleBlink = false
-    var nextTyping = 8.0, typingStart = -100.0, typingEnd = -100.0
+    var nextTyping = 3.0, typingStart = -100.0, typingEnd = -100.0
     var nextTap = 20.0, tapStart = -10.0
     var entrance: Entrance?, entranceCount = 0, leaveCount = 0, burstDone = false, twinkled = false
     // The hat is off most of the time (about 70%), and on for a while after each entrance.
     var hatOn = false, nextHatSwitch = 4.0
     func hatTime(on: Bool) -> Double { every * (on ? 0.3 : 0.7) * Double.random(in: 0.75...1.25) }
     var sparkles: [Sparkle] = []
-    // The laptop: on the floor under him most of the time (about 70%), in his hands the rest.
+    // The laptop: on the floor beside him almost all the time (about 90%), held off to his side the rest.
     let laptopGroup = CALayer()
-    var laptopMove: (start: Double, down: Bool)? = nil, onFloor = false, nextLaptopSwitch = 12.0, floatBegin: CFTimeInterval? = nil
+    var laptopMove: (start: Double, down: Bool)? = nil, onFloor = false, nextLaptopSwitch = 10.0, floatBegin: CFTimeInterval? = nil
     static let laptopMoveTime = 1.4
-    static let floorTime = 35.0...63.0, heldTime = 15.0...27.0     // averages 49 and 21: 70% on the floor
+    static let floorTime = 75.0...105.0, heldTime = 8.0...12.0     // averages 90 and 10: 90% on the floor
+    // Held, it's off to his right, propped on his right arm, and his left hand reaches over to type.
+    var heldPos: CGPoint { CGPoint(x: mid.x + 9 * u, y: mid.y + 0.5 * u) }
     var floorPos: CGPoint { CGPoint(x: mid.x + 12 * u, y: mid.y - 1.5 * u) }   // beside him on his right, level with his feet
 
     init(screen s: NSScreen, every minutes: Double = defaultEveryMinutes, show: Bool = true) {
@@ -256,6 +258,7 @@ final class Clawd: NSObject {
         screenGlow.position = pt(screenArt.x + screenArt.w / 2, screenArt.y + screenArt.h / 2)
         body.position = pt(9, 3)
         for l in [eyeL, eyeR] { l.anchorPoint = CGPoint(x: 0.5, y: 0.5) }
+        armR.anchorPoint = CGPoint(x: 0, y: 0.5)                        // stretches out from his side
         hat.contents = hatArt.image
         hat.bounds = CGRect(x: 0, y: 0, width: hatArt.w * u, height: hatArt.h * u)
         hat.anchorPoint = CGPoint(x: (9 - hatArt.x) / hatArt.w, y: 0)    // the middle of the brim
@@ -365,8 +368,8 @@ final class Clawd: NSObject {
             laptopMove = nil; onFloor = m.down
             nextLaptopSwitch = t + Double.random(in: m.down ? Clawd.floorTime : Clawd.heldTime)
             if !m.down {                                  // picked it up to get something done
-                typingStart = t + 0.6; typingEnd = typingStart + Double.random(in: 4...8)
-                nextTyping = typingEnd + Double.random(in: 4...8)
+                typingStart = t + 0.5; typingEnd = typingStart + Double.random(in: 3...6)
+                nextTyping = nextLaptopSwitch + 1             // once per pick-up, then it goes back down
             }
         }
         if entrance == nil, laptopMove == nil, t >= nextHatSwitch {
@@ -402,7 +405,7 @@ final class Clawd: NSObject {
         let hover = hypot(mouse.x - me.x, mouse.y - me.y) < 9 * u && idle < 5
         if laptopMove != nil { target = CGPoint(x: 30, y: 20) }
         else if let l = b.look { target = CGPoint(x: (l.x - 9) * 3, y: (l.y - 3.5) * 3) }
-        else if typing { target = CGPoint(x: sin(CGFloat(t) * 1.7) * 4, y: 20) }
+        else if typing { target = CGPoint(x: 16 + sin(CGFloat(t) * 1.7) * 3, y: 14) }   // over at the laptop on his right
         else {
             if idle > 10, t >= nextIdleLook || idleLook == nil {
                 nextIdleLook = t + Double.random(in: 4...9)
@@ -435,15 +438,21 @@ final class Clawd: NSObject {
         // Typing: arms in, hands on the keys, the screen flickering away
         let tIn = smooth(CGFloat((t - typingStart) / 0.25)) * (1 - smooth(CGFloat((t - typingEnd) / 0.25 + 1)))
         let into = tIn
-        // Typing pulls both arms in; reaching for the laptop takes his right arm down
+        // Typing tucks his left arm in and puts that hand on the keys, over on his right
         place(armL, 1 + into * 2.5, 3 + into * 1.5 + reach * 0.5)
-        place(armR, 15 - into * 2.5, 3 + into * 1.5 + reach * 2.5)   // stays on his side, just lower
         let tapL = max(0, sin(CGFloat(t) * 2 * .pi * 5)), tapR = max(0, sin(CGFloat(t) * 2 * .pi * 5 + .pi * 0.9))
-        place(handL, 5, 5.75 - tapL * 0.35 * into); place(handR, 12, 5.75 - tapR * 0.35 * into)
-        handL.opacity = Float(into); handR.opacity = Float(into)
+        place(handL, 5.5 + tapR * 0.5 * into, 5.75 - tapL * 0.35 * into)   // one hand, hopping about the keys
+        handL.opacity = Float(into); handR.opacity = 0                     // the other one is holding it
         let flicker = into > 0 ? 0.2 * (sin(CGFloat(t) * 23) * sin(CGFloat(t) * 7.3)) : 0
         screenGlow.opacity = Float((0.45 + 0.35 * into + flicker) * (onFloor && laptopMove == nil ? 0.5 : 1))
-        placeLaptop(t, lift: float)
+        let lp = placeLaptop(t, lift: float)
+        // His right arm: under the laptop while he's carrying it, otherwise at his side (reaching down for it)
+        let carry = carrying(t)
+        let ox = (lp.x - mid.x) / u, oy = -(lp.y - mid.y) / u            // the laptop's offset, in sprite units
+        let trayY = min(6, 6.5 + oy), trayW = max(2, ox + 9.5 - 15)      // just under its base, out to its middle
+        let restY = 3 + reach * 2.5
+        armR.setAffineTransform(CGAffineTransform(scaleX: (2 + (trayW - 2) * carry) / 2, y: 1))
+        place(armR, 15, restY + (trayY - restY) * carry)
 
         // Eyes: follow, blink, squint when happy
         var blink: CGFloat = 1
@@ -495,8 +504,9 @@ final class Clawd: NSObject {
     }
 
     // Held, it's part of him and floats with him. On the floor it belongs to the window and stays put.
-    func placeLaptop(_ t: Double, lift: CGFloat) {
-        let held = mid, ground = floorPos
+    @discardableResult
+    func placeLaptop(_ t: Double, lift: CGFloat) -> CGPoint {
+        let held = heldPos, ground = floorPos
         let off = lift * u + bobNow                       // how far he is from his usual spot, right now
         let below = CGPoint(x: ground.x, y: ground.y - off)   // the floor spot, as seen from his moving frame
         // Out to the side in a little arc, up a touch on the way
@@ -519,6 +529,14 @@ final class Clawd: NSObject {
             if floor { root.insertSublayer(laptopGroup, above: glow) } else { rig.insertSublayer(laptopGroup, above: bodyGroup) }
         }
         if laptopGroup.position != pos { laptopGroup.position = pos }
+        return pos
+    }
+
+    // How much his right arm is carrying the laptop: all the time it's in his hand, eased off as he lets go.
+    func carrying(_ t: Double) -> CGFloat {
+        guard let m = laptopMove else { return onFloor ? 0 : 1 }
+        let p = CGFloat((t - m.start) / Clawd.laptopMoveTime)
+        return m.down ? 1 - smooth((p - 0.6) / 0.15) : smooth((p - 0.4) / 0.15)
     }
 
     // MARK: Sparkles
@@ -751,7 +769,7 @@ func selftest() -> Bool {
         step(c, to: 4)
         check(c.handL.opacity < 0.01 && abs(c.armL.position.x - c.pt(2, 0).x) < 0.5, "typing: arms not back")
     }
-    // The laptop: on the floor about 70% of the time, typed on when it's picked up, and never jumping.
+    // The laptop: on the floor about 90% of the time, typed on when it's picked up, and never jumping.
     do {
         let c = makeSim(screen)
         c.nextLaptopSwitch = 1
@@ -766,8 +784,8 @@ func selftest() -> Bool {
             if c.typing { if c.onFloor { typedFloor = true } else { typedHeld = true } }
         }
         let share = Double(floorFrames) / Double(frames)
-        check(abs(share - 0.7) < 0.08, "laptop: on the floor \(Int(share * 100))% of the time")
-        check(downs > 20, "laptop: only put down \(downs) times")
+        check(abs(share - 0.9) < 0.04, "laptop: on the floor \(Int(share * 100))% of the time")
+        check(downs > 15, "laptop: only put down \(downs) times")
         check(typedHeld && !typedFloor, "laptop: typing at the wrong times")
         check(maxJump < 1, "laptop: jumped \(maxJump) px in a frame")
         if c.onFloor { check(hypot(c.laptopGroup.position.x - c.floorPos.x, c.laptopGroup.position.y - c.floorPos.y) < 0.5, "laptop: not on the floor") }
