@@ -50,14 +50,16 @@ let manhattanBlue = rgb(0x3A8DEB), manhattanLight = rgb(0x8FD2FF), spiderRed = r
 let plagueBlack = rgb(0x45444E), plagueDark = rgb(0x24232A), lacquer = rgb(0x7E1B1B), visor = rgb(0x1B2C45), leaf = rgb(0x5E9B3C)
 let batCowl = rgb(0x23252F), batSuit = rgb(0x575B68), batSuitDark = rgb(0x3E414C), batYellow = rgb(0xE8C33A), batYellowDark = rgb(0xB8921F)
 let batCape = rgb(0x17181F), batCapeLight = rgb(0x3A3D4C), batBlack = rgb(0x0B0B0F)
+let hoodie = rgb(0x2E3139), hoodieLight = rgb(0x4A4E5A), hoodieDark = rgb(0x1C1E24), denim = rgb(0x2F4466)
+let termGreen = rgb(0x45F08A), termBright = rgb(0xD4FFE2), laptopLid = rgb(0xB9BDC6), laptopEdge = rgb(0xDDE0E5), laptopBase = rgb(0x878C96)
 
 // To add an item: add a case here, then draw it in drawHat, drawSprite or drawSuit.
-enum Hat: String, CaseIterable { case santa, wizard, crown, party, viking, helm, ironhelm, laurel, kabuto, bubble, beak, tricorn, cowl, none }
+enum Hat: String, CaseIterable { case santa, wizard, crown, party, viking, helm, ironhelm, laurel, kabuto, bubble, beak, tricorn, cowl, hood, none }
 enum Gear: String, CaseIterable { case cape, robe, armor, scarf, sword, scepter, staff, axe }
 
 // A suit recolours the whole of him, where a hat or gear only sits on top.
 enum Suit: String, CaseIterable {
-    case none, ironman, manhattan, spider, toga, samurai, astronaut, plague, pirate, bat
+    case none, ironman, manhattan, spider, toga, samurai, astronaut, plague, pirate, bat, hacker
     var skin: CGColor {
         switch self {
         case .ironman: return armorRed
@@ -75,6 +77,7 @@ enum Suit: String, CaseIterable {
         case .spider: return spiderBlue
         case .astronaut: return whiteShade
         case .bat: return batSuitDark
+        case .hacker: return denim
         case .manhattan, .plague: return skin
         default: return orange
         }
@@ -86,11 +89,16 @@ enum Suit: String, CaseIterable {
         case .spider, .bat: return white
         case .astronaut: return rgb(0xE8F4FF)
         case .plague: return rgb(0xE3B341)
+        case .hacker: return termGreen   // the screen, reflected
         default: return eyeBlack
         }
     }
     var glow: [CGColor]? {   // nil is his usual warm glow
-        self == .manhattan ? [rgb(0x57B4FF, 0.46), rgb(0x3C8FEF, 0.19), rgb(0x2E6FD0, 0.05), rgb(0x2E6FD0, 0)] : nil
+        switch self {
+        case .manhattan: return [rgb(0x57B4FF, 0.46), rgb(0x3C8FEF, 0.19), rgb(0x2E6FD0, 0.05), rgb(0x2E6FD0, 0)]
+        case .hacker: return [rgb(0x45F08A, 0.30), rgb(0x2FC56C, 0.11), rgb(0x1E8A4A, 0.03), rgb(0x1E8A4A, 0)]   // lit by the laptop
+        default: return nil
+        }
     }
 }
 
@@ -144,6 +152,11 @@ let looks = [
         "Working alone (with Alfred, Robin and the whole team)…", "Comparing tragic backstories with Guts…",
         "Lurking in the server room…",
     ], spark: batYellow),
+    Look(name: "hacker", hat: .hood, gear: [], suit: .hacker, arrival: "I'm in…", verbs: [
+        "Hacking the mainframe…", "Bypassing the firewall (it was off)…", "Downloading more RAM…",
+        "Enhancing… enhancing…", "sudo make me a sandwich…", "Trying to SSH into Guts (still air-gapped)…",
+        "Typing very fast, in green…",
+    ], spark: termGreen),
     Look(name: "senator", hat: .laurel, gear: [], suit: .toga, arrival: "Taking the floor…", verbs: [
         "Filibustering your pull request…", "Crossing the Rubicon into main…", "Carthago delenda est (rm -rf)…",
         "Declaring a deploy freeze for the Ides…", "Et tu, linter?…", "Moving to censure Guts…",
@@ -186,6 +199,7 @@ struct Pose: Hashable {
     var glide = false          // the bat cape spread out as wings
     var crouch = false         // a superhero landing
     var shadow = false         // all black but the eyes, against the moon
+    var typing = 0             // 0 still, 1 and 2 are the typing frames
 }
 
 // y grows downward in sprite space; (9, 3.5) is the centre of his body.
@@ -229,7 +243,7 @@ func drawSprite(_ c: CGContext, center: CGPoint, u: CGFloat, pose p: Pose) {
     case 2: px(15, 3, 1, 1, skin); px(16, 2, 1, 1, skin)
     default: px(15, 3, 2, 1, skin)
     }
-    drawSuit(p.suit, t: t, wave: p.wave, px)
+    drawSuit(p.suit, t: t, wave: p.wave, typing: p.typing, px)
     // Eyes
     for ex in [CGFloat(5), 11.5] {
         let left = ex == 5
@@ -363,12 +377,17 @@ func drawHat(_ kind: Hat, t: CGFloat, crooked: Bool, _ hat: Paint) {
         hat(3, -0.5, 12, 0.5, batCowl); hat(3, -0.5, 12, 0.25, batCapeLight)
         hat(4, -2.5, 0.75, 2, batCowl); hat(4.75, -1.5, 0.75, 1, batCowl)
         hat(13.25, -2.5, 0.75, 2, batCowl); hat(12.5, -1.5, 0.75, 1, batCowl)
+    case .hood:   // up, always, and a little too big
+        hat(5, -2.75, 8, 0.75, hoodie); hat(3.5, -2, 11, 1, hoodie); hat(2.5, -1, 13, 1.25, hoodie)
+        hat(2.25, 0.25, 1.5, 3.5, hoodie); hat(14.25, 0.25, 1.5, 3.5, hoodie)
+        hat(3.75, 0.25, 10.5, 0.25, hoodieDark); hat(3.5, 0.25, 0.25, 3.5, hoodieDark); hat(14.25, 0.25, 0.25, 3.5, hoodieDark)
+        hat(5, -2.75, 8, 0.25, hoodieLight); hat(3.5, -2, 1.5, 0.25, hoodieLight); hat(2.5, -1, 1, 0.25, hoodieLight)
     case .none:
         break
     }
 }
 
-func drawSuit(_ suit: Suit, t: CGFloat, wave: Int, _ px: Paint) {
+func drawSuit(_ suit: Suit, t: CGFloat, wave: Int, typing: Int = 0, _ px: Paint) {
     switch suit {
     case .none:
         break
@@ -414,6 +433,26 @@ func drawSuit(_ suit: Suit, t: CGFloat, wave: Int, _ px: Paint) {
         px(3, 5.25, 12, 0.5, batYellow)
         for x in [4.25, 5.75, 11.5, 13] as [CGFloat] { px(x, 5.25, 0.75, 0.5, batYellowDark) }
         px(8.5, 5.25, 1, 0.5, rgb(0xFFF0A0))
+    case .hacker:
+        // The hoodie, sleeves and all, with the strings hanging out
+        px(3, 3.75, 12, 2.25, hoodie); px(3, 3.75, 12, 0.25, hoodieDark)
+        let lh: CGFloat = typing == 1 ? 0.25 : 0, rh: CGFloat = typing == 2 ? 0.25 : 0
+        px(1, 3 + lh, 2, 1, hoodie)
+        switch wave {
+        case 1: px(15, 2, 1, 1, hoodie); px(16, 1, 1, 1, hoodie)
+        case 2: px(15, 3, 1, 1, hoodie); px(16, 2, 1, 1, hoodie)
+        default: px(15, 3 + rh, 2, 1, hoodie)
+        }
+        px(6.5, 3.75, 0.25, 1.75, whiteShade); px(11.25, 3.75, 0.25, 1.75, whiteShade)
+        // The laptop, lid towards you, with a very small Claude on the back
+        let glow: CGFloat = typing == 0 ? 0.55 : typing == 1 ? 0.85 : 0.7
+        px(5.5, 3, 7, 0.25, rgb(0x45F08A, glow))
+        px(5.5, 3.25, 7, 2.75, laptopLid); px(5.5, 3.25, 7, 0.25, laptopEdge); px(12.25, 3.25, 0.25, 2.75, laptopBase)
+        px(8.875, 3.75, 0.25, 1.5, orange); px(8.25, 4.375, 1.5, 0.25, orange); px(8.75, 4.25, 0.5, 0.5, orange)
+        for (x, y) in [(8.375, 3.875), (9.375, 3.875), (8.375, 4.875), (9.375, 4.875)] as [(CGFloat, CGFloat)] { px(x, y, 0.25, 0.25, orange) }
+        px(4.5, 6, 9, 0.5, laptopBase); px(4.5, 6, 9, 0.25, laptopEdge)
+        // and his hands on the keys, when he's going for it
+        if typing > 0 { px(typing == 1 ? 4.75 : 5.25, 5.75 - lh, 1, 0.5, hoodie); px(typing == 2 ? 12.25 : 11.75, 5.75 - rh, 1, 0.5, hoodie) }
     case .pirate:
         px(3, 3.75, 12, 2.25, rgb(0x6E1F2A)); px(7.5, 3.75, 3, 2.25, white); px(3, 5.25, 12, 0.5, brown); px(8.25, 5.25, 1.5, 0.5, gold)
         px(16.5, -3, 1, 5, steelLight); px(17.25, -3.5, 0.75, 4.5, steel); px(15.5, 2, 3, 0.75, gold); px(16.5, 2.75, 1, 1, brown)
@@ -470,6 +509,86 @@ let batLogo = [
 ]
 let flyingBat = [["X.....X", "XX.X.XX", ".XXXXX.", "..X.X.."], ["...X...", ".XXXXX.", "XX.X.XX", "X.....X"]]
 let batarangArt = [".X...X.", "XXXXXXX", "..X.X.."]
+let skullArt = [
+    "....XXXXX....",
+    "..XXXXXXXXX..",
+    ".XXXXXXXXXXX.",
+    ".XXXXXXXXXXX.",
+    ".XX...X...XX.",
+    ".XX...X...XX.",
+    ".XXXXX.XXXXX.",
+    "..XXXX.XXXX..",
+    "...XXXXXXX...",
+    "...X.X.X.X...",
+    "...XXXXXXX...",
+]
+let lockArt = ["..XXX..", ".X...X.", ".X...X.", "XXXXXXX", "XXX.XXX", "XXX.XXX", "XXXXXXX"]
+// Code rain glyphs, 3 by 4: some digits, some things that only look like they mean something.
+let glyphArt = [
+    ["XXX", "X.X", "X.X", "XXX"], [".X.", "XX.", ".X.", "XXX"], ["XXX", "..X", ".X.", "X.."], ["X.X", "XXX", "..X", "..X"],
+    ["XXX", "X..", "XXX", "..X"], ["XX.", "..X", "XX.", "..X"], ["X..", "XXX", "X.X", "XXX"], [".X.", "XXX", ".X.", "X.X"],
+]
+
+// A falling column of code: the head at the bottom, bright, and the trail fading out above it.
+func rainImage(_ glyphs: [Int]) -> CGImage {
+    let cell = 2, gh = 5, h = glyphs.count * gh
+    let c = context(3 * cell, h * cell)
+    c.setShouldAntialias(false)
+    for (i, g) in glyphs.enumerated() {
+        let head = i == glyphs.count - 1, fade = CGFloat(i + 1) / CGFloat(glyphs.count)
+        c.setFillColor(head ? termBright : rgb(0x45F08A, 0.15 + 0.75 * fade))
+        for (r, row) in glyphArt[g].enumerated() {
+            for (x, ch) in row.enumerated() where ch == "X" {
+                c.fill(CGRect(x: x * cell, y: (h - 1 - (i * gh + r)) * cell, width: cell, height: cell))
+            }
+        }
+    }
+    return c.makeImage()!
+}
+
+// What pops up over his head when he tries Guts: a little red terminal with a lock in it.
+func deniedImage() -> CGImage {
+    let cell = 2, w = 13, h = 13, c = context(w * cell, h * cell)
+    c.setShouldAntialias(false)
+    func r(_ x: Int, _ y: Int, _ rw: Int, _ rh: Int, _ col: CGColor) { c.setFillColor(col); c.fill(CGRect(x: x * cell, y: (h - y - rh) * cell, width: rw * cell, height: rh * cell)) }
+    r(0, 0, w, h, rgb(0xE0403A)); r(1, 2, w - 2, h - 3, rgb(0x120E10, 0.95)); r(1, 1, w - 2, 1, rgb(0xE0403A))
+    r(1, 0, 1, 1, rgb(0xFFB0A8)); r(3, 0, 1, 1, rgb(0xFFB0A8))
+    for (y, row) in lockArt.enumerated() { for (x, ch) in row.enumerated() where ch == "X" { r(3 + x, 4 + y, 1, 1, rgb(0xFF5A50)) } }
+    return c.makeImage()!
+}
+
+// The moon, being hacked: a green scan comes down over it, leaving a skull behind.
+// `k` is how far the scan has got, 0...1. `glitch` slides a band of it sideways.
+func breachImage(_ k: CGFloat, glitch: Bool) -> CGImage {
+    let px = 256, c = context(px, px), m = CGFloat(px) / 2, r = m / 2
+    let g = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB),
+                       colors: [rgb(0x45F08A, 0), rgb(0x45F08A, 0.22 * k), rgb(0x45F08A, 0)] as CFArray, locations: [0.42, 0.52, 1])!
+    c.drawRadialGradient(g, startCenter: CGPoint(x: m, y: m), startRadius: 0, endCenter: CGPoint(x: m, y: m), endRadius: m, options: [])
+    let scanY = m + r - 2 * r * k                 // from the top of the disc down
+    c.saveGState()
+    c.addEllipse(in: CGRect(x: m - r, y: m - r, width: 2 * r, height: 2 * r)); c.clip()
+    c.clip(to: CGRect(x: 0, y: scanY, width: CGFloat(px), height: CGFloat(px) - scanY))
+    c.setFillColor(rgb(0x0E3A20, 0.55)); c.fill(CGRect(x: 0, y: 0, width: px, height: px))
+    c.setFillColor(rgb(0x45F08A, 0.16))
+    for y in stride(from: 0, to: px, by: 4) { c.fill(CGRect(x: 0, y: y, width: px, height: 2)) }
+    let cell = 6, skull = pixelImage(skullArt, cell: cell, color: rgb(0x8DFFB4, 0.95))
+    c.interpolationQuality = .none
+    let sw = CGFloat(skull.width), sh = CGFloat(skull.height)
+    c.draw(skull, in: CGRect(x: m - sw / 2, y: m - sh / 2 + 2, width: sw, height: sh))
+    if glitch {                                   // a slice of it jumps sideways for a frame
+        let band = CGRect(x: 0, y: m - 10, width: CGFloat(px), height: 14)
+        if let slice = c.makeImage()?.cropping(to: CGRect(x: 0, y: CGFloat(px) - band.maxY, width: band.width, height: band.height)) {
+            c.clear(band); c.draw(slice, in: band.offsetBy(dx: 9, dy: 0))
+        }
+    }
+    c.restoreGState()
+    if k < 1 {                                    // the scan line itself
+        c.setFillColor(termBright)
+        let half = sqrt(max(0, r * r - (scanY - m) * (scanY - m)))
+        c.fill(CGRect(x: m - half - 4, y: scanY - 1, width: 2 * half + 8, height: 3))
+    }
+    return c.makeImage()!
+}
 
 // A hat on its own, for when it's flying through the air.
 func hatImage(_ kind: Hat) -> CGImage {
@@ -581,7 +700,7 @@ let spinner = ["·", "✢", "✳", "✶", "✻", "✽", "✻", "✶", "✳", "�
 func noAnim(_ l: CALayer) { l.actions = ["position": NSNull(), "contents": NSNull(), "bounds": NSNull(), "transform": NSNull(), "opacity": NSNull(), "hidden": NSNull()] }
 
 struct Spark { let layer: CALayer; var x: CGFloat; var y: CGFloat; var vx: CGFloat; var vy: CGFloat; let dies: Double }
-enum Scene { case sword, eclipse, change, summon, bat }
+enum Scene { case sword, eclipse, change, summon, bat, hack }
 
 // Is the desktop the thing under this point, rather than a window? Clicks reach us wherever they
 // land. Only ordinary windows count: transparent overlays above them (a notch app, a dictation
@@ -662,6 +781,16 @@ final class Clawd {
     var signalWindow: NSWindow?, signalLayer: CALayer?
     var hideSprite = false, hideGlow = false
     lazy var batFrames = flyingBat.map { pixelImage($0, cell: Int(spritePx), color: rgb(0x6A6E7C)) }
+    // The hacker: code rain he vanishes into, bits off the keyboard, the moon hacked, and Guts not.
+    let hackTimes = (glitch: 1.6, rain: 2.8, reveal: 1.4, type: 2.6, breach: 3.6, guts: 2.6, vanish: 1.6)
+    var hackTotal: Double { let T = hackTimes; return T.glitch + T.rain + T.reveal + T.type + T.breach + T.guts + T.vanish }
+    var hackStage = 0, breachStep = -1
+    var rain: [(layer: CALayer, frames: [CGImage], x: CGFloat, top: CGFloat, speed: CGFloat, ph: CGFloat)] = []
+    var bits: [(layer: CALayer, x: CGFloat, born: Double)] = []
+    var nextBit = 0.0
+    var deniedLayer: CALayer?
+    var breachWindow: NSWindow?, breachLayer: CALayer?
+    lazy var bitFrames = glyphArt.map { pixelImage($0, cell: 2, color: termGreen) }
 
     init(screen s: NSScreen, hat: Hat?, gear: [Gear]?, suit: Suit? = nil, show: Bool = true, cycle: [Look] = looks, every minutes: Double = defaultEveryMinutes) {
         screen = s
@@ -729,17 +858,17 @@ final class Clawd {
     }
 
     func close() {
-        endEclipse(); endBlood(); endBat(); window.orderOut(nil)
+        endEclipse(); endBlood(); endBat(); endHack(); window.orderOut(nil)
     }
 
     var visible: Bool {
-        [window, moonWindow, bloodWindow, signalWindow].contains { $0?.occlusionState.contains(.visible) ?? false }
+        [window, moonWindow, bloodWindow, signalWindow, breachWindow].contains { $0?.occlusionState.contains(.visible) ?? false }
     }
 
     var desiredInterval: TimeInterval {
         let t = lastT
         if sleeping { return 1 }
-        if scene == .bat { return 1.0 / 15 }   // he's flying about, so a little smoother
+        if scene == .bat || scene == .hack { return 1.0 / 15 }   // flying about, or code raining, so a little smoother
         if scene != nil || bloodWindow != nil || pulling || t < dizzyUntil || t - hopStart < 0.6 || t < waveUntil || t < tapUntil || t - lastMoveT < 1.5 { return 1.0 / 10 }
         if tired || ProcessInfo.processInfo.isLowPowerModeEnabled { return 0.5 }
         return 1.0 / 3
@@ -769,7 +898,7 @@ final class Clawd {
         guard cycling else { return false }
         if bloodWindow == nil { startBlood(t) } else { bloodFadeStart = nil }
         if scene == .sword || scene == .summon { return true }
-        endEclipse(); endBat()
+        endEclipse(); endBat(); endHack()
         flyHat?.removeFromSuperlayer(); flyHat = nil; dropHat?.removeFromSuperlayer(); dropHat = nil; swapStage = 0
         sleeping = false; sleepForced = false; lastMoveT = t
         pulling = false; spin = 0; lastAngle = nil; dizzyUntil = 0
@@ -905,6 +1034,7 @@ final class Clawd {
         var movedByScene = false
         hideSprite = false; hideGlow = false
         if scene == .bat { movedByScene = updateBat(t, &p, &offset, &status, &detail, &target, &shake) }
+        if scene == .hack { updateHack(t, &p, &status, &detail, &target, &shake) }
         if scene == .sword { movedByScene = updateSword(t, &p, &offset, &status, &detail, &target, &shake, &fallen) }
         if scene == .eclipse { updateEclipse(t, &p, &status, &detail, &target, &shake) }
         if scene == .change { updateChange(t, &p, &status, &detail, &target) }
@@ -1061,6 +1191,9 @@ final class Clawd {
         } else if look.suit == .bat {
             startBat(look, t)
             nextCycle = t + holdSeconds + batTotal
+        } else if look.suit == .hacker {
+            startHack(look, t)
+            nextCycle = t + holdSeconds + hackTotal
         } else {
             startChange(look, t)
             nextCycle = t + holdSeconds
@@ -1508,6 +1641,194 @@ final class Clawd {
         return true
     }
 
+    // MARK: The hacker
+
+    func startHack(_ look: Look, _ t: Double) {
+        scene = .hack; sceneStart = t; changeTarget = look; hackStage = 0; breachStep = -1; nextBit = 0
+    }
+
+    // Takes everything down. Like Batman's, it doesn't dress him: the scene does that as it goes.
+    func endHack() {
+        rain.forEach { $0.layer.removeFromSuperlayer() }; rain = []
+        bits.forEach { $0.layer.removeFromSuperlayer() }; bits = []
+        deniedLayer?.removeFromSuperlayer(); deniedLayer = nil
+        breachWindow?.orderOut(nil); breachWindow = nil; breachLayer = nil; breachStep = -1
+        hideSprite = false; sprite.isHidden = false
+    }
+
+    func makeRain() {
+        let n = 18
+        for i in 0..<n {
+            let len = Int.random(in: 4...8)
+            let frames = (0..<2).map { _ in rainImage((0..<len).map { _ in Int.random(in: 0..<glyphArt.count) }) }
+            let l = CALayer(); noAnim(l)
+            l.magnificationFilter = .nearest
+            l.contents = frames[0]
+            l.anchorPoint = CGPoint(x: 0.5, y: 0)          // the head, at the bottom
+            l.bounds = CGRect(x: 0, y: 0, width: 1.5 * u, height: CGFloat(len) * 2.5 * u)
+            root.addSublayer(l)
+            let x = -17 + CGFloat(i) * 34 / CGFloat(n - 1) + .random(in: -0.5...0.5)
+            // The head starts low enough that the whole trail fits under the top of his window.
+            let top = home.y / u - 1 - l.bounds.height / u
+            rain.append((l, frames, (x * 2).rounded() / 2, top, .random(in: 20...36), .random(in: 0...60)))
+        }
+    }
+
+    // It pours down over him until he's gone, then drains away and he's there, in a hoodie.
+    func updateRain(_ s: Double, _ t: Double) {
+        let fade = s < 0.4 ? s / 0.4 : s > 2.2 ? max(0, 1 - (s - 2.2) / 0.5) : 1
+        for (i, d) in rain.enumerated() {
+            let y = d.top - (CGFloat(s) * d.speed + d.ph).truncatingRemainder(dividingBy: d.top + home.y / u)
+            d.layer.position = CGPoint(x: home.x + d.x * u, y: home.y + (y * 2).rounded() / 2 * u)
+            d.layer.opacity = Float(fade)
+            let f = d.frames[(Int(t * 5) + i) % 2]
+            if d.layer.contents as! CGImage !== f { d.layer.contents = f }
+        }
+    }
+
+    // A 0 or a 1 (or something like one) every so often, floating up off the keyboard.
+    func updateBits(_ t: Double, emit: Bool) {
+        if emit, t >= nextBit {
+            nextBit = t + 0.12
+            let l = CALayer(); noAnim(l)
+            l.magnificationFilter = .nearest
+            l.contents = bitFrames.randomElement()
+            l.bounds = CGRect(x: 0, y: 0, width: 1.5 * u, height: 2 * u)
+            root.insertSublayer(l, below: sprite)
+            bits.append((l, .random(in: -4...4), t))
+        }
+        bits = bits.filter { b in
+            let a = t - b.born
+            if a > 1.1 { b.layer.removeFromSuperlayer(); return false }
+            let y = 4 + CGFloat(a) * 9, x = b.x * (1 + CGFloat(a) * 0.6)
+            b.layer.position = CGPoint(x: home.x + (x * 2).rounded() / 2 * u, y: home.y + (y * 2).rounded() / 2 * u)
+            b.layer.opacity = Float(min(1, (1.1 - a) / 0.4))
+            return true
+        }
+    }
+
+    func startBreach() {
+        let r = moonRadius, side = r * 4
+        let frame = NSRect(x: moon.x - side / 2, y: moon.y - side / 2, width: side, height: side)
+        let w = NSWindow(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
+        w.isOpaque = false; w.backgroundColor = .clear; w.hasShadow = false; w.ignoresMouseEvents = true
+        w.level = window.level; w.collectionBehavior = window.collectionBehavior
+        w.isReleasedWhenClosed = false
+        let v = NSView(frame: NSRect(origin: .zero, size: frame.size)); v.wantsLayer = true
+        w.contentView = v
+        let l = CALayer(); noAnim(l)
+        l.frame = CGRect(x: 0, y: 0, width: side, height: side)
+        v.layer!.addSublayer(l)
+        if randomEvents { w.orderFront(nil) }
+        breachWindow = w; breachLayer = l; breachStep = -1
+    }
+
+    // Redraws the moon's overlay only when the scan has moved on a step, or it glitches.
+    func setBreach(_ k: Double, glitch: Bool) {
+        let steps = 16, step = Int(min(1, k) * Double(steps)), key = step * 2 + (glitch ? 1 : 0)
+        guard key != breachStep else { return }
+        breachStep = key
+        breachLayer?.contents = breachImage(CGFloat(step) / CGFloat(steps), glitch: glitch)
+    }
+
+    func updateHack(_ t: Double, _ p: inout Pose, _ status: inout String?, _ detail: inout String?,
+                    _ target: inout CGPoint, _ shake: inout CGFloat) {
+        let T = hackTimes
+        var s = t - sceneStart
+        detail = ""
+        func dressed() {
+            if hackStage < 2 { dress(changeTarget); hackStage = 2 }
+            p.hat = currentHat; p.gear = currentGear; p.suit = currentSuit; p.crooked = false
+        }
+        func jitter(_ amount: CGFloat) { shake = [0, amount, -amount, amount * 2, 0, -amount * 2][Int(t * 15) % 6] }
+        func typeAway() { p.typing = Int(t * 10) % 2 == 0 ? 1 : 2; p.lookY = 0.5 }
+        if s < T.glitch {                       // something's wrong with him, and then very wrong
+            jitter(s < 0.8 ? 0.25 : 0.5); p.eyes = .wide
+            if s > 0.8, Int(t * 15) % 5 == 0 { hideSprite = true }
+            if hackStage < 1, s > 1.1 { hackStage = 1; burst(changeTarget.spark, count: 8, t: t) }
+            status = s < 0.8 ? "Detecting an intrusion…" : "Detecting it in me…"
+            return
+        }
+        s -= T.glitch
+        if s < T.rain {                         // and the code takes him
+            if rain.isEmpty, hackStage < 3 { makeRain(); hackStage = max(hackStage, 1) }
+            updateRain(s, t)
+            p.eyes = .wide
+            if s > 0.9 && s < 1.9 { hideSprite = true }
+            if s > 1.4 { dressed() }
+            status = "Entering the Matrix…"
+            return
+        }
+        s -= T.rain
+        if !rain.isEmpty { rain.forEach { $0.layer.removeFromSuperlayer() }; rain = [] }
+        dressed()                               // first: a long pause can land here before the rain dressed him
+        hackStage = max(hackStage, 3)
+        if s < T.reveal {                       // straight out of the screen at you
+            if hackStage < 4 { hackStage = 4; hopStart = t; hopHeight = 2; burst(changeTarget.spark, count: 14, t: t) }
+            target = center
+            status = changeTarget.arrival
+            return
+        }
+        s -= T.reveal
+        if s < T.type {                         // hands on the keys
+            typeAway(); updateBits(t, emit: true)
+            status = "Typing very fast…"; detail = "(\(9000 + Int(s * 37) % 900) wpm)"
+            return
+        }
+        s -= T.type
+        if s < T.breach {                       // the moon, taken over from a laptop on the desktop
+            if breachWindow == nil, hackStage < 5 { hackStage = 5; startBreach() }
+            let k = s / 2.0
+            setBreach(k, glitch: k > 1 && Int(t * 6) % 5 == 0)
+            if k < 1 { typeAway(); updateBits(t, emit: true) } else { updateBits(t, emit: false); p.eyes = .happy }
+            target = moon
+            status = k < 1 ? "Hacking the moon…" : "Moon pwned…"
+            return
+        }
+        s -= T.breach
+        if breachWindow != nil { breachWindow?.orderOut(nil); breachWindow = nil; breachLayer = nil; breachStep = -1 }
+        updateBits(t, emit: false)
+        if s < T.guts {                         // Guts, however, has no ports
+            target = guts
+            if s < 1.0 {
+                typeAway()
+                status = "Hacking Guts…"
+                return
+            }
+            if deniedLayer == nil, hackStage < 6 {
+                hackStage = 6
+                let l = CALayer(); noAnim(l)
+                l.magnificationFilter = .nearest
+                l.contents = deniedImage()
+                l.bounds = CGRect(x: 0, y: 0, width: 6.5 * u, height: 6.5 * u)
+                root.addSublayer(l)
+                deniedLayer = l
+            }
+            let k = CGFloat(min(1, (s - 1.0) / 0.15))
+            deniedLayer?.position = CGPoint(x: home.x, y: home.y + 13 * u)
+            deniedLayer?.setAffineTransform(CGAffineTransform(scaleX: k, y: k))
+            p.eyes = .wide
+            if s < 1.4 { jitter(0.5) }
+            status = "Access denied (Guts is air-gapped)…"
+            return
+        }
+        s -= T.guts
+        if deniedLayer != nil { deniedLayer?.removeFromSuperlayer(); deniedLayer = nil }
+        if s < T.vanish {                       // and no one will ever know
+            if s < 0.8 {
+                jitter(0.25)
+                if Int(t * 15) % 4 == 0 { hideSprite = true }
+                if hackStage < 7 { hackStage = 7; burst(changeTarget.spark, count: 10, t: t) }
+                status = "Covering my tracks…"
+            } else {
+                p.eyes = .happy
+                status = "I was never here…"
+            }
+            return
+        }
+        endHack(); scene = nil; hackStage = 0; verbStart = t
+    }
+
     // MARK: The blood moon
 
     func updateSummon(_ t: Double, _ p: inout Pose, _ status: inout String?, _ detail: inout String?,
@@ -1795,10 +2116,13 @@ final class Sim {
         return T.leave + T.drag + T.pant + T.lift + T.fall + T.up + T.stare + T.surge + T.swap + T.power + T.sheathe + T.back
     }
     // Long enough for a look's arrival scene to finish.
-    func sceneLength(_ look: Look) -> Double { look.name == "berserker" ? swordTotal + 2 : look.suit == .bat ? c.batTotal + 2 : 6 }
+    func sceneLength(_ look: Look) -> Double {
+        look.name == "berserker" ? swordTotal + 2 : look.suit == .bat ? c.batTotal + 2 : look.suit == .hacker ? c.hackTotal + 2 : 6
+    }
     func clean() -> Bool {
         c.scene == nil && c.swordLayer == nil && c.moonWindow == nil && c.bloodWindow == nil && c.flyHat == nil && c.dropHat == nil
             && c.swarm.isEmpty && c.ropeLayer == nil && c.batarangLayer == nil && c.signalWindow == nil
+            && c.rain.isEmpty && c.bits.isEmpty && c.deniedLayer == nil && c.breachWindow == nil
             && c.window.frame == c.baseFrame && !c.sprite.isHidden && !c.glow.isHidden
             && c.root.sublayers?.count == 4 + c.sparks.count
             && c.sprite.affineTransform() == .identity && abs(c.pos.x) < 0.5 && abs(c.pos.y) < 0.5
@@ -1992,6 +2316,59 @@ func selftest() -> Bool {
         runs += 1
     }
 
+    // The hacker: the glitch, the code rain, the typing, the moon, Guts, and the getaway.
+    let hacker = looks.first { $0.suit == .hacker }!
+    for hat in Hat.allCases {
+        let name = "hacker from \(hat.rawValue)"
+        let sim = Sim(hat: hat, gear: [.cape], screen: screen), c = sim.c
+        c.startLook(hacker, sim.t)
+        var glitched = false, rained = false, vanished = false, typed = false, bitsFlew = false, pwned = false
+        var denied = false, lookedAtGuts = false, clipped = false, order: [String] = []
+        sim.run(c.hackTotal + 2) {
+            if abs(c.sprite.position.x - c.home.x) > 0.4 * c.u && c.scene == .hack { glitched = true }
+            if c.rain.count > 10 { rained = true }
+            if c.sprite.isHidden { vanished = true }
+            if c.pose.typing > 0 { typed = true }
+            if c.bits.count > 3 { bitsFlew = true }
+            if c.breachWindow != nil && c.breachStep >= 32 { pwned = true }
+            if let l = c.deniedLayer, l.affineTransform().a > 0.99 { denied = true }
+            if c.drawnText.hasPrefix("Access denied"), c.pose.lookX > 0 { lookedAtGuts = true }
+            for l in c.rain.map(\.layer) + c.bits.map(\.layer) + [c.deniedLayer].compactMap({ $0 }) where l.frame.maxY > c.window.frame.height + 1 { clipped = true }
+            let line = String(c.drawnText.split(separator: "|").first ?? "")
+            if order.last != line { order.append(line) }
+        }
+        check(glitched, "\(name): never glitched")
+        check(rained && vanished, "\(name): never vanished into the code")
+        check(typed && bitsFlew, "\(name): never typed")
+        check(pwned, "\(name): never hacked the moon")
+        check(denied && lookedAtGuts, "\(name): never got denied by Guts")
+        check(!clipped, "\(name): something left his window")
+        check(sim.clean(), "\(name): not clean afterwards")
+        check(c.currentHat == .hood && c.currentSuit == .hacker && c.currentGear.isEmpty, "\(name): wrong outfit: \(c.currentHat) \(c.currentGear) \(c.currentSuit)")
+        for want in ["Detecting an intrusion…", "Entering the Matrix…", "I'm in…", "Typing very fast…", "Hacking the moon…", "Moon pwned…",
+                     "Hacking Guts…", "Access denied (Guts is air-gapped)…", "Covering my tracks…", "I was never here…"] {
+            check(order.contains(want), "\(name): missing status \(want)")
+        }
+        // Covered part way through: dressed and tidy, whenever it was.
+        for at in [0.5, 2.5, 4.0, 5.5, 8.0, 10.0, 12.0, 13.5, 15.0] {
+            let s2 = Sim(hat: hat, gear: [], screen: screen), c2 = s2.c
+            c2.startLook(hacker, s2.t); s2.run(at); s2.t += 500; s2.run(2)
+            check(s2.clean() && c2.currentHat == .hood && c2.currentSuit == .hacker, "\(name): paused at \(at)s: \(c2.currentHat) \(c2.currentSuit) scene \(String(describing: c2.scene))")
+        }
+        // The moon cuts it short at any point, and takes everything down on the way to the sword.
+        for at in [1.0, 3.0, 7.0, 10.0, 13.0, 15.0] {
+            let s3 = Sim(hat: nil, gear: nil, screen: screen), c3 = s3.c
+            c3.startLook(hacker, s3.t); s3.run(at)
+            check(c3.handleClick(at: CGPoint(x: c3.moon.x, y: c3.moon.y)), "\(name): moon ignored at \(at)s")
+            check(c3.rain.isEmpty && c3.bits.isEmpty && c3.deniedLayer == nil && c3.breachWindow == nil && !c3.sprite.isHidden,
+                  "\(name): moon at \(at)s left hacker things behind")
+            s3.run(2); s3.run(s3.swordTotal + 4)
+            check(s3.clean() && c3.currentHat == .helm, "\(name): moon at \(at)s: no Berserker afterwards: \(c3.currentHat)")
+            if hat != .santa { break }
+        }
+        runs += 1
+    }
+
     // The rotation
     do {
         let sim = Sim(hat: nil, gear: nil, screen: screen), c = sim.c
@@ -2087,8 +2464,8 @@ func selftest() -> Bool {
         let first = Array(order.prefix(looks.count))
         check(first == looks.map(\.name), "rotation order: \(first)")
         let gaps = zip(swords.dropFirst(), swords).map { $0 - $1 }
-        let batExtra = looks.filter { $0.suit == .bat }.count > 0 ? r.batTotal : 0
-        check(gaps.count >= 2 && gaps.allSatisfy { abs($0 - (Double(looks.count) * 50 + 40 + batExtra)) < 2 }, "sword gaps: \(gaps)")
+        let batExtra = looks.contains { $0.suit == .bat } ? r.batTotal : 0, hackExtra = looks.contains { $0.suit == .hacker } ? r.hackTotal : 0
+        check(gaps.count >= 2 && gaps.allSatisfy { abs($0 - (Double(looks.count) * 50 + 40 + batExtra + hackExtra)) < 2 }, "sword gaps: \(gaps)")
     }
     // Rebuilding keeps his place in the rotation, and nothing rebuilds unless the screens changed.
     do {
@@ -2182,7 +2559,7 @@ func renderFrame(_ c: Clawd, wall: CGImage?, screen f: CGRect) -> CGImage {
         x.draw(w, in: CGRect(x: (f.width - dw) / 2, y: (f.height - dh) / 2, width: dw, height: dh))
     }
     x.saveGState(); x.translateBy(x: c.window.frame.minX - f.minX, y: c.window.frame.minY - f.minY); c.root.render(in: x); x.restoreGState()
-    for m in [c.bloodWindow, c.moonWindow, c.signalWindow].compactMap({ $0 }) {
+    for m in [c.bloodWindow, c.moonWindow, c.signalWindow, c.breachWindow].compactMap({ $0 }) {
         guard let l = m.contentView?.layer else { continue }
         x.saveGState(); x.translateBy(x: m.frame.minX - f.minX, y: m.frame.minY - f.minY); l.render(in: x); x.restoreGState()
     }
@@ -2257,6 +2634,19 @@ func renderFrames(dir: String, wallpaper: String?) {
         return r
     }()
     shoot("batman", hat: .santa, gear: [], times: batTimes, cols: 4, setup: { $0.c.startLook(looks.first { $0.suit == .bat }!, $0.t) })
+    let H = probe.c.hackTimes
+    var h = 0.0
+    let hackTimes: [Double] = {
+        var r: [Double] = [0.5, 1.3]; h += H.glitch
+        r += [h + 0.5, h + 1.2, h + 2.2]; h += H.rain
+        r += [h + 0.6]; h += H.reveal
+        r += [h + 1.0]; h += H.type
+        r += [h + 0.7, h + 1.4, h + 2.6]; h += H.breach
+        r += [h + 0.5, h + 1.6]; h += H.guts
+        r += [h + 0.3, h + 1.2, h + H.vanish + 1]
+        return r
+    }()
+    shoot("hacker", hat: .santa, gear: [], times: hackTimes, cols: 4, setup: { $0.c.startLook(looks.first { $0.suit == .hacker }!, $0.t) })
     shoot("moon", hat: nil, gear: nil, times: [0.1, 0.5, 1.2, 2.5, 5, 40, 42, 45, 49], setup: { $0.c.handleClick(at: $0.c.moon) })
     shoot("eclipse", times: [5, 11, 15, 17, 20, 25, 28, 31, 35, 39], setup: { $0.c.startEclipse($0.t) })
     let closeUp = CGRect(x: 0, y: 0, width: 760, height: 760)
@@ -2278,7 +2668,7 @@ func renderFrames(dir: String, wallpaper: String?) {
         let a = CGFloat(s.t) * 2 * .pi * 1.2
         s.c.fakeMouse = CGPoint(x: s.c.center.x + cos(a) * 20 * s.c.u, y: s.c.center.y + sin(a) * 20 * s.c.u)
     })
-    for look in looks.dropFirst() where look.suit != .bat {
+    for look in looks.dropFirst() where look.suit != .bat && look.suit != .hacker {
         close("look-" + look.name, times: [0.3, 0.8, 1.0, 1.4, 1.75, 2.0, 2.6, 3.6], setup: { $0.c.startLook(look, $0.t) })
     }
     close("back-to-santa", hat: nil, gear: nil, times: [0.3, 0.8, 1.0, 1.4, 1.75, 2.0, 2.6, 3.6], setup: { s in
