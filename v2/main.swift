@@ -24,6 +24,7 @@ let orange = rgb(0xD97757), eyeBlack = rgb(0x141210)
 let red = rgb(0xCF3A30), redDark = rgb(0x9C2620), redLight = rgb(0xE8564A)
 let white = rgb(0xF4EFE6), whiteShade = rgb(0xC9C2B6)
 let lid = rgb(0xB9BDC6), lidEdge = rgb(0xDDE0E5), lidSide = rgb(0x878C96), screenLight = rgb(0xDCE8FF)
+let logoGrey = rgb(0x4A4E57)
 
 func context(_ w: Int, _ h: Int) -> CGContext {
     CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
@@ -53,11 +54,30 @@ let armArt = Part(x: 0, y: 0, w: 2, h: 1) { $0(0, 0, 2, 1, orange) }
 let legArt = Part(x: 0, y: 0, w: 1, h: 1.5) { $0(0, 0, 1, 1.5, orange) }
 let eyeArt = Part(x: 0, y: 0, w: 1.5, h: 2) { $0(0, 0, 1.5, 2, eyeBlack) }
 let handArt = Part(x: 0, y: 0, w: 1, h: 0.5) { $0(0, 0, 1, 0.5, orange) }
-// The laptop, lid towards you, with a very small Claude on the back of it.
+// The laptop, lid towards you: a silver MacBook, with the Apple logo on the back of it.
+let appleLogo = [
+    "........##....",
+    ".......###....",
+    ".......##.....",
+    "..............",
+    "..####..####..",
+    ".############.",
+    "############..",
+    "###########...",
+    "###########...",
+    "###########...",
+    "############..",
+    "##############",
+    ".############.",
+    ".############.",
+    "..##########..",
+    "...###..###...",
+]
 let laptopArt = Part(x: 4.5, y: 3.25, w: 9, h: 3.25) { px in
     px(5.5, 3.25, 7, 2.75, lid); px(5.5, 3.25, 7, 0.25, lidEdge); px(12.25, 3.25, 0.25, 2.75, lidSide)
-    px(8.875, 3.75, 0.25, 1.5, orange); px(8.25, 4.375, 1.5, 0.25, orange); px(8.75, 4.25, 0.5, 0.5, orange)
-    for (x, y) in [(8.375, 3.875), (9.375, 3.875), (8.375, 4.875), (9.375, 4.875)] as [(CGFloat, CGFloat)] { px(x, y, 0.25, 0.25, orange) }
+    for (row, line) in appleLogo.enumerated() {
+        for (col, ch) in line.enumerated() where ch == "#" { px(8.125 + CGFloat(col) * 0.125, 3.625 + CGFloat(row) * 0.125, 0.125, 0.125, logoGrey) }
+    }
     px(4.5, 6, 9, 0.5, lidSide); px(4.5, 6, 9, 0.25, lidEdge)
 }
 let screenArt = Part(x: 5.5, y: 3, w: 7, h: 0.25) { $0(5.5, 3, 7, 0.25, screenLight) }
