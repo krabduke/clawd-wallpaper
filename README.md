@@ -1,5 +1,7 @@
 # clawd-wallpaper
 
+> **New: [v2](v2/)**, a smaller, smoother Clawd with a laptop and a Santa hat that makes an entrance every few minutes. This page is v1.
+
 A tiny pixel Claude Code mascot in a Santa hat who lives on your Mac desktop, under your icons and windows. Leave him on screen for a few seconds and he changes: he hauls in a giant sword and ends up in Berserker armour, and later on he's Batman, Iron Man, Doctor Manhattan, a Roman senator, and more. Click the moon and the Berserker change starts right away. It was made as a funny contrast to a very serious Berserk wallpaper.
 
 ![Outfits and expressions](docs/poses.png)
